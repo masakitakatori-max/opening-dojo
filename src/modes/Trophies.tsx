@@ -4,14 +4,15 @@ import { Chess } from "chess.js";
 import { useEffect, useMemo, useState } from "react";
 import Board, { type Arrow, type SquareMark } from "../components/Board";
 import { TROPHY_DEMOS, type TrophyDemo } from "../data/trophyDemos";
-import { bookMarks, engineMarksArrows } from "../components/panels";
+import { TROPHY_NOTES, NOTE_LABELS, type TrophyNote } from "../data/trophyNotes";
+import { bookMarks, engineMarksArrows, GmChips } from "../components/panels";
 import { engine, type EngineLine } from "../lib/engine";
 import { illustrate } from "../lib/illustrate";
 import { gradedMarks, gradePiece } from "../lib/review";
 import { SpeedSlider, useReplaySpeed } from "../lib/replaySpeed";
 import { sfx } from "../lib/sound";
 import { load, save } from "../lib/storage";
-import { candidates, namedNodes, openingChain, pathTo } from "../lib/tree";
+import { candidates, namedNodes, nearestWith, openingChain, pathTo } from "../lib/tree";
 import { detect, loadLog, NOT_COVERED, openingAward, openingPoints, TROPHIES, type MoveCtx, type TrophyCat } from "../lib/trophies";
 
 const CATS: { cat: TrophyCat; what: string }[] = [
@@ -27,48 +28,92 @@ const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const EXACT = new Set(["brilliant", "queenSac"]); // judged by the engine in games: on the demo, the move itself is the answer
 type Mv = { from: string; to: string; promotion?: string };
 
+interface OpeningDetail {
+  path: string[];
+  en?: string;
+  eco?: string;
+  idea?: string;
+  plans?: { name: string; items: string[] };
+  gm?: string[];
+  chain: string[];
+  branches: { san: string; share: number; name?: string }[];
+}
 interface Demo extends TrophyDemo {
   id: string;
   title: string;
   pts: number;
   what: string;
   earns: (fenBefore: string, m: Mv, ctx: MoveCtx) => boolean;
+  note?: TrophyNote;
+  opening?: OpeningDetail;
 }
 
-export default function Trophies() {
+const FAMILY_ORDER = ["キングズ・ポーン・オープニング", "クイーンズ・ポーン・オープニング", "イングリッシュ・オープニング", "レティ・オープニング"];
+const fmtMoves = (moves: string[]) => moves.map((m, i) => (i % 2 === 0 ? `${i / 2 + 1}.${m}` : m)).join(" ");
+
+/** 図鑑: named moves, formations, mates and openings in one place — what they are, why they work, and a board to try them. */
+export default function Trophies({ onOpen }: { onOpen: (moves: string[]) => void }) {
   const [log, setLog] = useState(loadLog);
   useEffect(() => setLog(loadLog()), []); // the game just left saves its score as it closes
   const [demo, setDemo] = useState<Demo>();
+  const [q, setQ] = useState("");
+  const [gm, setGm] = useState("");
   const openings = useMemo(
     () =>
       namedNodes()
-        .map((n) => ({ name: n.info!.name!, pts: openingPoints(openingChain(n).length), node: n }))
-        .filter((o, i, a) => a.findIndex((x) => x.name === o.name) === i)
-        .sort((a, b) => a.pts - b.pts || a.name.localeCompare(b.name, "ja")),
+        .map((n) => ({ name: n.info!.name!, pts: openingPoints(openingChain(n).length), node: n, chain: openingChain(n), path: pathTo(n) }))
+        .sort((a, b) => a.path.length - b.path.length)
+        .filter((o, i, a) => a.findIndex((x) => x.name === o.name) === i),
     [],
   );
+  const gms = useMemo(() => [...new Set(openings.flatMap((o) => o.node.info?.gm ?? []))].sort(), [openings]);
   const got = (id: string) => log.earned[id];
   const earnedCount = TROPHIES.filter((t) => got(t.id)).length;
   const openCount = openings.filter((o) => got(`open:${o.name}`)).length;
+
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = (hay: string) => terms.every((t) => hay.toLowerCase().includes(t));
+  const shownTrophies = gm ? [] : TROPHIES.filter((t) => hit(`${t.ja} ${t.cat} ${t.what} ${(TROPHY_NOTES[t.id] ?? []).join(" ")}`));
+  const shownOpenings = openings.filter((o) => (!gm || o.chain.some((c) => c.info?.gm?.includes(gm))) && hit(`${o.name} ${o.node.info?.en ?? ""} ${o.node.info?.eco ?? ""} ${o.chain.map((c) => c.info?.name).join(" ")} ${o.node.info?.idea ?? ""}`));
+  const groups = new Map<string, { head: string; fam: string; items: typeof shownOpenings }>();
+  for (const o of shownOpenings) {
+    const head = o.chain[0]?.info?.name ?? "その他";
+    const fam = o.chain[1]?.info?.name ?? head;
+    const key = `${head}|${fam}`;
+    if (!groups.has(key)) groups.set(key, { head, fam, items: [] });
+    groups.get(key)!.items.push(o);
+  }
+  const ordered = [...groups.values()].sort((a, b) => {
+    const ia = FAMILY_ORDER.indexOf(a.head), ib = FAMILY_ORDER.indexOf(b.head);
+    return (ia < 0 ? 9 : ia) - (ib < 0 ? 9 : ib) || a.items[0].path.length - b.items[0].path.length;
+  });
 
   const openTrophy = (t: (typeof TROPHIES)[number]) => {
     const d = TROPHY_DEMOS[t.id];
     if (!d) return;
     const last = d.line[d.line.length - 1];
     setDemo({
-      ...d, id: t.id, title: t.ja, pts: t.pts, what: t.what,
+      ...d, id: t.id, title: t.ja, pts: t.pts, what: t.what, note: TROPHY_NOTES[t.id],
       earns: (fen, m, ctx) => (EXACT.has(t.id) ? m.from + m.to === last.slice(0, 4) : detect(fen, m, ctx).some((a) => a.id === t.id)),
     });
   };
   const openOpening = (o: (typeof openings)[number]) => {
-    const sans = pathTo(o.node);
+    const sans = o.path;
     const c = new Chess();
     for (const s of sans.slice(0, -1)) c.move(s);
     const m = c.move(sans[sans.length - 1]);
+    const plans = nearestWith(o.node, "plans");
     setDemo({
       id: `open:${o.name}`, lead: sans.slice(0, -1), line: [m.from + m.to + (m.promotion ?? "")], title: o.name, pts: o.pts,
-      what: "自分の一手でこの型に入ると獲得できます。",
+      what: `${o.node.info?.eco ? `${o.node.info.eco}　` : ""}${fmtMoves(sans)}`,
       tip: sans.length > 1 ? "次の一手でこの型に入ります。" : "初手でこの型に入ります。",
+      opening: {
+        path: sans, en: o.node.info?.en, eco: o.node.info?.eco, idea: o.node.info?.idea,
+        plans: plans?.info?.plans ? { name: plans.info.name ?? o.name, items: plans.info.plans } : undefined,
+        gm: nearestWith(o.node, "gm")?.info?.gm,
+        chain: o.chain.map((x) => x.info!.name!),
+        branches: candidates(o.node.fen).map((x) => ({ san: x.san, share: x.share, name: x.childNode.info?.name })),
+      },
       earns: (f, mv) => {
         try {
           const x = new Chess(f);
@@ -84,12 +129,18 @@ export default function Trophies() {
   return (
     <div className="picker trophy-page">
       <header className="picker-head">
-        <h1>トロフィー</h1>
+        <h1>図鑑</h1>
         <p>
-          名前のついた手・陣形・詰みの型・定跡を、<strong>補助なしで</strong>自分で指すと「芸術点」が入ります。
-          対象は「局面練習」と「セルフ対局」。補助が ON の間は、達成しても点は入りません（参考として表示だけされます）。同じものは 1 局に 1 回まで。
-          <br /><strong>トロフィーを押すと、その形に至る手順をリプレイし、決め手を自分で指して確かめられます。</strong>
+          名前のついた<strong>手・戦術・陣形・詰みの型・定跡</strong>の一覧です。押すと、しくみ・なぜ強いか・見つけ方・注意点の解説と、そこに至る手順のリプレイ、自分で指して確かめる盤が開きます。
+          <br />「局面練習」と「セルフ対局」で、これらを<strong>補助なしで</strong>指すと「芸術点」が入り、🏆 が金色になります（同じものは 1 局に 1 回まで）。
         </p>
+        <div className="lib-filters">
+          <input placeholder="検索：ピン / ナイドルフ / Najdorf / B90 / 詰み …" value={q} onChange={(e) => setQ(e.target.value)} />
+          <select value={gm} onChange={(e) => setGm(e.target.value)}>
+            <option value="">定跡を GM で絞り込み</option>
+            {gms.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
       </header>
 
       <div className="trophy-summary">
@@ -98,47 +149,73 @@ export default function Trophies() {
         <div className="card"><div className="muted small">集めた種類</div><b>{earnedCount + openCount}<span className="muted"> / {TROPHIES.length + openings.length}</span></b></div>
       </div>
 
-      {CATS.map(({ cat, what }) => (
-        <section key={cat}>
-          <h3 className="picker-group">{cat} <span className="muted small">— {what}</span></h3>
-          <div className="trophy-grid">
-            {TROPHIES.filter((t) => t.cat === cat).map((t) => {
-              const e = got(t.id);
-              return (
-                <button key={t.id} className={`trophy ${e ? "got" : ""}`} onClick={() => openTrophy(t)}>
-                  <div className="trophy-top">
-                    <span className={`trophy-icon ${e ? "" : "dim"}`}>🏆</span>
-                    <span className="trophy-name">{t.ja}</span>
-                    <span className="trophy-pts">+{t.pts}</span>
-                  </div>
-                  <div className="trophy-what">{t.what}</div>
-                  <div className="muted small">{e ? `${e.n} 回達成 ・ 初回 ${new Date(e.first).toLocaleDateString("ja-JP")}` : "未獲得"}<span className="trophy-try">指してみる ▶</span></div>
-                </button>
-              );
-            })}
+      {CATS.map(({ cat, what }) => {
+        const items = shownTrophies.filter((t) => t.cat === cat);
+        if (!items.length) return null;
+        return (
+          <section key={cat}>
+            <h3 className="picker-group">{cat} <span className="muted small">— {what}</span></h3>
+            <div className="trophy-grid">
+              {items.map((t) => {
+                const e = got(t.id);
+                return (
+                  <button key={t.id} className={`trophy ${e ? "got" : ""}`} onClick={() => openTrophy(t)}>
+                    <div className="trophy-top">
+                      <span className={`trophy-icon ${e ? "" : "dim"}`}>🏆</span>
+                      <span className="trophy-name">{t.ja}</span>
+                      <span className="trophy-pts">+{t.pts}</span>
+                    </div>
+                    <div className="trophy-what">{t.what}</div>
+                    <div className="muted small">{e ? `${e.n} 回達成 ・ 初回 ${new Date(e.first).toLocaleDateString("ja-JP")}` : "未獲得"}<span className="trophy-try">解説と盤 ▶</span></div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+
+      {ordered.length > 0 && (
+        <section>
+          <h3 className="picker-group">定跡（型） <span className="muted small">— 自分の一手でその型に入ると獲得。{openCount} / {openings.length}</span></h3>
+          <div className="lib-groups">
+            {ordered.map((g) => (
+              <section key={`${g.head}|${g.fam}`} className="lib-group">
+                <h3>{g.fam} <span className="muted small">{g.head !== g.fam ? g.head : ""}</span></h3>
+                {g.items.map((o) => {
+                  const e = got(`open:${o.name}`);
+                  return (
+                    <button key={o.name} className="lib-item" style={{ paddingLeft: 12 + Math.max(0, o.chain.length - 2) * 14 }} onClick={() => openOpening(o)}>
+                      <span className="eco">{o.node.info?.eco ?? "—"}</span>
+                      <span className="lib-name">
+                        <span className={`trophy-icon ${e ? "" : "dim"}`}>🏆</span> {o.name}
+                        <span className="muted small"> {o.node.info?.en}</span>
+                        <span className={`lib-pts ${e ? "got" : ""}`}>+{o.pts}</span>
+                      </span>
+                      <span className="lib-moves">{fmtMoves(o.path)}</span>
+                      {o.node.info?.gm && <GmChips names={o.node.info.gm} />}
+                    </button>
+                  );
+                })}
+              </section>
+            ))}
           </div>
         </section>
-      ))}
-
-      <section>
-        <h3 className="picker-group">型（定跡）コレクション <span className="muted small">— 自分の一手でその型に入ると獲得。{openCount} / {openings.length}</span></h3>
-        <div className="trophy-openings">
-          {openings.map((o) => {
-            const e = got(`open:${o.name}`);
-            return (
-              <button key={o.name} className={`op-chip ${e ? "got" : ""}`} title={e ? `${e.n} 回` : "未獲得"} onClick={() => openOpening(o)}>
-                {o.name} <b>+{o.pts}</b>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      )}
+      {shownTrophies.length === 0 && ordered.length === 0 && <p className="muted" style={{ marginTop: 24 }}>該当する項目がありません。</p>}
 
       <p className="muted small" style={{ marginTop: 24, lineHeight: 1.8 }}>
         収録していない名前：{NOT_COVERED.join("、")}。いずれも「指した手の意図」や「ほかに何が指せたか」で決まり、盤面の形だけでは判定できないため外しています。
       </p>
+      <p className="muted small credits">
+        クレジット：駒の画像 cburnett（CC BY-SA 3.0、<a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">chessground</a> より）／
+        エンジン <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noreferrer">Stockfish.js</a>（GPLv3）／
+        パズル <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess puzzle database</a>（CC0）／
+        GM の棋譜 <a href="https://www.pgnmentor.com/files.html" target="_blank" rel="noreferrer">PGN Mentor</a>／
+        ルール処理 <a href="https://github.com/jhlywa/chess.js" target="_blank" rel="noreferrer">chess.js</a>（BSD-2-Clause）。
+      </p>
 
-      {demo && <DemoModal key={demo.id} demo={demo} onClose={() => setDemo(undefined)} />}
+      {demo && <DemoModal key={demo.id} demo={demo} onClose={() => setDemo(undefined)} onOpen={onOpen} />}
     </div>
   );
 }
@@ -166,7 +243,7 @@ const numbered = (ps: Pos[]) =>
   }).join(" ");
 
 /** Replay the route, then play the move(s) yourself. Opponent replies play themselves. */
-function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
+function DemoModal({ demo, onClose, onOpen }: { demo: Demo; onClose: () => void; onOpen: (moves: string[]) => void }) {
   const leadPos = useMemo(() => replay(demo.fen ?? START, demo.lead ?? []), [demo]);
   const moment = leadPos[leadPos.length - 1];
   const linePos = useMemo(() => replay(moment.fen, demo.line.map(uciMv)), [demo, moment]);
@@ -406,6 +483,41 @@ function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
           <button className="chip" onClick={reset}>⟲ やり直す</button>
         </div>
         <div className="muted small" style={{ marginTop: 6 }}>参考の盤なので、ここでは点は入りません。</div>
+
+        {demo.note && (
+          <div className="demo-notes">
+            <h4>解説</h4>
+            {demo.note.map((text, i) => text && (
+              <div key={i} className="note">
+                <span className="note-label">{NOTE_LABELS[i]}</span>
+                <p>{text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {demo.opening && (
+          <div className="demo-notes">
+            <h4>解説 {demo.opening.en && <span className="muted small">{demo.opening.en}</span>}</h4>
+            {demo.opening.chain.length > 1 && (
+              <div className="note"><span className="note-label">系統</span><p>{demo.opening.chain.join(" › ")}</p></div>
+            )}
+            {demo.opening.idea && <div className="note"><span className="note-label">この手の狙い</span><p>{demo.opening.idea}</p></div>}
+            {demo.opening.plans && (
+              <div className="note">
+                <span className="note-label">双方の作戦{demo.opening.plans.name !== demo.title ? `（${demo.opening.plans.name}）` : ""}</span>
+                <ul>{demo.opening.plans.items.map((x) => <li key={x}>{x}</li>)}</ul>
+              </div>
+            )}
+            {demo.opening.branches.length > 0 && (
+              <div className="note">
+                <span className="note-label">ここからの分岐（指される割合）</span>
+                <ul>{demo.opening.branches.map((b) => <li key={b.san}><b>{b.san}</b> {Math.round(b.share * 100)}%{b.name ? ` — ${b.name}` : ""}</li>)}</ul>
+              </div>
+            )}
+            {demo.opening.gm && <div className="note"><span className="note-label">得意とした GM</span><GmChips names={demo.opening.gm} /></div>}
+            <div className="fb-actions"><button className="primary" onClick={() => onOpen(demo.opening!.path)}>探索モードでこの型を開く ▶</button></div>
+          </div>
+        )}
       </div>
     </div>
   );

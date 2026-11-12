@@ -2,6 +2,7 @@
 //   node scripts/check-trophy-demos.ts
 import { Chess } from "chess.js";
 import { TROPHY_DEMOS } from "../src/data/trophyDemos.ts";
+import { TROPHY_NOTES } from "../src/data/trophyNotes.ts";
 import { detect, TROPHIES, type MoveCtx } from "../src/lib/trophies.ts";
 
 const EXACT = new Set(["brilliant", "queenSac"]); // judged by the engine in games: here the move itself is the answer
@@ -9,6 +10,7 @@ let bad = 0;
 for (const t of TROPHIES) {
   const d = TROPHY_DEMOS[t.id];
   if (!d) { console.log("NG", t.id, "見本なし"); bad++; continue; }
+  if (!TROPHY_NOTES[t.id] || TROPHY_NOTES[t.id].slice(0, 4).some((x) => !x)) { console.log("NG", t.id, "解説なし"); bad++; continue; }
   try {
     const c = new Chess(d.fen);
     for (const s of d.lead ?? []) c.move(s);

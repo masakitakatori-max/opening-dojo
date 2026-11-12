@@ -674,3 +674,20 @@ button.op-chip:hover { color: #fff; }
 .demo-player button { flex: 1; height: 42px; border-radius: 6px; background: #3a3733; font-size: 15px; font-weight: 800; }
 .demo-player button:disabled { opacity: .35; }
 .demo-player button.primary { flex: 2.4; font-size: 13px; white-space: nowrap; }
+
+/* ── 図鑑 (merged library + trophies) ── */
+.lib-pts { margin-left: 6px; font-size: 11px; font-weight: 800; color: var(--muted); }
+.lib-pts.got { color: #f6d488; }
+.lib-name .trophy-icon { font-size: 12px; }
+.demo-notes { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.demo-notes h4 { margin: 0 0 8px; font-size: 15px; }
+.note { margin-bottom: 10px; }
+.note-label { display: inline-block; font-size: 11px; font-weight: 800; color: #b6e08a; background: rgba(129,182,76,.16); padding: 1px 8px; border-radius: 999px; }
+.note p { margin: 4px 0 0; line-height: 1.75; font-size: 13.5px; color: #e6e5e3; }
+.note ul { margin: 4px 0 0; padding-left: 18px; line-height: 1.75; font-size: 13.5px; color: #e6e5e3; }
+@media (min-width: 900px) {
+  .demo-modal { width: min(880px, calc(100vw - 48px)); display: grid; grid-template-columns: calc(var(--bs) + 0px) 1fr; column-gap: 18px; align-items: start; }
+  .demo-modal > * { grid-column: 1; }
+  .demo-modal > .demo-head { grid-column: 1 / -1; }
+  .demo-modal > .demo-notes { grid-column: 2; grid-row: 2 / span 12; margin-top: 0; border-top: 0; padding-top: 0; max-height: calc(100dvh - 140px); overflow-y: auto; }
+}

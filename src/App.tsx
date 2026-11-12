@@ -3,7 +3,6 @@ import { BASE } from "./lib/asset";
 import AimMode from "./modes/Aim";
 import Drill from "./modes/Drill";
 import Explore, { type Settings } from "./modes/Explore";
-import Library from "./modes/Library";
 import Spar from "./modes/Spar";
 import StyleMode from "./modes/Style";
 import Trophies from "./modes/Trophies";
@@ -19,8 +18,7 @@ const NAV: { id: Mode; label: string; icon: string; desc: string }[] = [
   { id: "spar", label: "局面練習", icon: "🥊", desc: "好きな局面を再現して、エンジン相手に何度も指す" },
   { id: "self", label: "セルフ対局", icon: "👥", desc: "白も黒も自分で指す。探索と同じ補助が全部使え、まとめて ON/OFF できる" },
   { id: "drill", label: "型ドリル", icon: "🎯", desc: "定跡の型を体で覚える" },
-  { id: "library", label: "型図鑑", icon: "📖", desc: "全オープニング一覧" },
-  { id: "trophy", label: "トロフィー", icon: "🏆", desc: "補助なしで指した、名前のついた手・陣形・詰み・定跡の記録（芸術点）" },
+  { id: "trophy", label: "図鑑", icon: "📖", desc: "名前のついた手・戦術・陣形・詰み・定跡の解説と、獲得したトロフィー（芸術点）" },
   { id: "style", label: "タイプ診断", icon: "🧬", desc: "自分の対局から、指し方の偏りと近い GM を出す" },
 ];
 
@@ -51,7 +49,7 @@ export default function App() {
           <span>Opening<br />Dojo</span>
         </div>
         {NAV.map((n) => (
-          <button key={n.id} className={`nav ${mode === n.id ? "on" : ""}`} onClick={() => { setSparQuick(undefined); setMode(n.id); }} title={n.desc}>
+          <button key={n.id} className={`nav ${mode === n.id || (n.id === "trophy" && mode === "library") ? "on" : ""}`} onClick={() => { setSparQuick(undefined); setMode(n.id); }} title={n.desc}>
             <span className="nav-icon">{n.icon}</span>
             <span className="nav-label">{n.label}</span>
           </button>
@@ -86,8 +84,7 @@ export default function App() {
         )}
         {mode === "aim" && <AimMode />}
         {mode === "drill" && <Drill onExplore={openInExplore} />}
-        {mode === "library" && <Library onOpen={openInExplore} />}
-        {mode === "trophy" && <Trophies />}
+        {(mode === "trophy" || mode === "library") && <Trophies onOpen={openInExplore} />}
         {mode === "style" && (
           <StyleMode
             onClone={(side) => {
