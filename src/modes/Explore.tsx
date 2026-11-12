@@ -282,7 +282,10 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
   // Self play: a sacrifice the engine approves of (!!) scores once the analysis arrives; the game ends on mate/draw.
   const brilliantPlies = selfPlay ? reviews.map((r, k) => (r?.verdict === "brilliant" ? k : -1)).filter((k) => k > 0).join(",") : "";
   useEffect(() => {
-    for (const k of brilliantPlies.split(",").filter(Boolean)) art.brilliant(+k % 2 ? "w" : "b", hidden);
+    for (const k of brilliantPlies.split(",").filter(Boolean)) {
+      const p = path[+k];
+      if (p?.from) art.brilliant(+k % 2 ? "w" : "b", hidden, path[+k - 1].fen, { from: p.from, to: p.to! });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brilliantPlies]);
   const endPos = useMemo(() => new Chess(path[path.length - 1].fen), [path]);

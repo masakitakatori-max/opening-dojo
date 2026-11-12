@@ -643,3 +643,22 @@ button.op-chip:hover { color: #fff; }
 .demo-status.ok { border-left-color: var(--green); color: #c9eaa6; font-weight: 700; }
 .demo-status.ng { border-left-color: #ca3431; color: #ff8a80; }
 .demo-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+
+/* ── promotion picker ── */
+.promo-backdrop { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: grid; place-items: center; }
+.promo-box { background: var(--bg-2); border-radius: 10px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+.promo-title { font-size: 12px; font-weight: 800; color: var(--text-2); margin-bottom: 6px; text-align: center; }
+.promo-row { display: flex; gap: 6px; }
+.promo-piece { width: calc(var(--bs) / 8); height: calc(var(--bs) / 8); min-width: 44px; min-height: 44px; background: #3a3733; border-radius: 8px; padding: 4px; }
+.promo-piece:first-child { background: rgba(129,182,76,.35); }
+.promo-piece:hover { background: #4b4844; }
+.promo-piece img { width: 100%; height: 100%; }
+
+.demo-pic { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #1a1916; font-size: 12.5px; line-height: 1.6; }
+.demo-legend { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; color: var(--text-2); font-weight: 700; }
+.demo-legend i { width: 14px; height: 5px; border-radius: 3px; display: inline-block; }
+.demo-pic ul { margin: 6px 0 0; padding-left: 18px; color: #e6e5e3; }
+.demo-route { margin-top: 8px; line-height: 1.6; max-height: 66px; overflow: auto; }
+.demo-modal { max-height: calc(100dvh - 24px); overflow-y: auto; }
+
+.demo-legend-line { margin-top: 6px; line-height: 1.6; }

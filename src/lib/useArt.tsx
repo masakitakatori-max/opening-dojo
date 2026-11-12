@@ -3,7 +3,7 @@
 import type { Color } from "chess.js";
 import { useEffect, useRef, useState } from "react";
 import { sfx } from "./sound";
-import { brilliantAward, detect, openingAward, recordAward, recordBest, recordGame, type Award } from "./trophies";
+import { detect, openingAward, recordAward, recordBest, recordGame, sacrificeAwards, type Award, type MoveCtx } from "./trophies";
 
 export interface ArtItem {
   n: number;
@@ -17,6 +17,7 @@ export function useArt() {
   const [feed, setFeed] = useState<ArtItem[]>([]);
   const [toast, setToast] = useState<{ text: string; n: number }>();
   const earned = useRef(new Set<string>()); // once per game, per side
+  const history = useRef<Record<Color, NonNullable<MoveCtx["prevOwn"]>>>({ w: [], b: [] }); // each side's moves (windmill)
   const saved = useRef(false);
   const score = (c?: Color) => feed.filter((f) => f.counted && (!c || f.color === c)).reduce((t, f) => t + f.pts, 0);
   const scoreRef = useRef(0);
@@ -59,14 +60,17 @@ export function useArt() {
     /** A move made by hand on the board. `counted` = no assists were on. */
     move: (fenBefore: string, fenAfter: string, m: { from: string; to: string; promotion?: string }, color: Color, counted: boolean) => {
       const op = openingAward(fenBefore, fenAfter);
-      give(color, [...detect(fenBefore, m), ...(op ? [op] : [])], counted);
+      const own = history.current[color];
+      give(color, [...detect(fenBefore, m, { prevOwn: own.slice(-2) }), ...(op ? [op] : [])], counted);
+      own.push({ fenBefore, move: m });
     },
-    /** The engine later judged a move a sound sacrifice (!!). */
-    brilliant: (color: Color, counted: boolean) => give(color, [brilliantAward()], counted),
+    /** The engine later judged a move a sound sacrifice (!!) — a queen given up also counts as a queen sacrifice. */
+    brilliant: (color: Color, counted: boolean, fenBefore: string, m: { from: string; to: string }) => give(color, sacrificeAwards(fenBefore, m), counted),
     /** Start a new game on the same board. */
     reset: () => {
       finish();
       earned.current = new Set();
+      history.current = { w: [], b: [] };
       saved.current = false;
       setFeed([]);
     },

@@ -1,22 +1,37 @@
 // トロフィー: everything that can earn 芸術点, what has been earned so far — and, on a tap,
-// a small board where the named move or pattern can be tried out (for reference: no points).
+// a board that replays the route to the moment, then lets you play the move (for reference: no points).
 import { Chess } from "chess.js";
 import { useEffect, useMemo, useState } from "react";
-import Board, { type Arrow } from "../components/Board";
+import Board, { type Arrow, type SquareMark } from "../components/Board";
 import { TROPHY_DEMOS, type TrophyDemo } from "../data/trophyDemos";
+import { bookMarks, engineMarksArrows } from "../components/panels";
+import { engine, type EngineLine } from "../lib/engine";
+import { illustrate } from "../lib/illustrate";
+import { gradedMarks, gradePiece } from "../lib/review";
 import { sfx } from "../lib/sound";
-import { namedNodes, openingChain, pathTo } from "../lib/tree";
-import { detect, loadLog, openingAward, openingPoints, TROPHIES, type TrophyCat } from "../lib/trophies";
+import { load, save } from "../lib/storage";
+import { candidates, namedNodes, openingChain, pathTo } from "../lib/tree";
+import { detect, loadLog, NOT_COVERED, openingAward, openingPoints, TROPHIES, type MoveCtx, type TrophyCat } from "../lib/trophies";
 
-const CATS: TrophyCat[] = ["特別な手", "戦術", "陣形・構え", "詰みの型"];
+const CATS: { cat: TrophyCat; what: string }[] = [
+  { cat: "特別な手", what: "ルールで決まった特別な指し方" },
+  { cat: "戦術", what: "一手で決まる、駒の利きの形" },
+  { cat: "捨て駒", what: "駒を差し出して、それ以上を得る" },
+  { cat: "駒の配置", what: "どこに何を置くか" },
+  { cat: "ポーン構造", what: "ポーンの骨格" },
+  { cat: "詰みの型", what: "詰んだ瞬間の形" },
+  { cat: "終盤の技術", what: "駒が減ってからの決まった技" },
+];
+const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const EXACT = new Set(["brilliant", "queenSac"]); // judged by the engine in games: on the demo, the move itself is the answer
 type Mv = { from: string; to: string; promotion?: string };
 
 interface Demo extends TrophyDemo {
+  id: string;
   title: string;
   pts: number;
   what: string;
-  /** Does this move, played in this position, earn the trophy? (used for the last move of the line) */
-  earns: (fenBefore: string, m: Mv) => boolean;
+  earns: (fenBefore: string, m: Mv, ctx: MoveCtx) => boolean;
 }
 
 export default function Trophies() {
@@ -40,22 +55,19 @@ export default function Trophies() {
     if (!d) return;
     const last = d.line[d.line.length - 1];
     setDemo({
-      ...d, title: t.ja, pts: t.pts, what: t.what,
-      // 妙手 is judged by the engine in a real game; here the move itself is the answer
-      earns: (fen, m) => (t.id === "brilliant" ? m.from + m.to === last.slice(0, 4) : detect(fen, m).some((a) => a.id === t.id)),
+      ...d, id: t.id, title: t.ja, pts: t.pts, what: t.what,
+      earns: (fen, m, ctx) => (EXACT.has(t.id) ? m.from + m.to === last.slice(0, 4) : detect(fen, m, ctx).some((a) => a.id === t.id)),
     });
   };
   const openOpening = (o: (typeof openings)[number]) => {
     const sans = pathTo(o.node);
     const c = new Chess();
     for (const s of sans.slice(0, -1)) c.move(s);
-    const fen = c.fen();
     const m = c.move(sans[sans.length - 1]);
-    const so = sans.slice(0, -1).map((s, i) => (i % 2 === 0 ? `${i / 2 + 1}.${s}` : s)).join(" ");
     setDemo({
-      fen, line: [m.from + m.to + (m.promotion ?? "")], title: o.name, pts: o.pts,
+      id: `open:${o.name}`, lead: sans.slice(0, -1), line: [m.from + m.to + (m.promotion ?? "")], title: o.name, pts: o.pts,
       what: "自分の一手でこの型に入ると獲得できます。",
-      tip: so ? `ここまでの手順：${so}。次の一手でこの型に入ります。` : "初手でこの型に入ります。",
+      tip: sans.length > 1 ? "次の一手でこの型に入ります。" : "初手でこの型に入ります。",
       earns: (f, mv) => {
         try {
           const x = new Chess(f);
@@ -75,7 +87,7 @@ export default function Trophies() {
         <p>
           名前のついた手・陣形・詰みの型・定跡を、<strong>補助なしで</strong>自分で指すと「芸術点」が入ります。
           対象は「局面練習」と「セルフ対局」。補助が ON の間は、達成しても点は入りません（参考として表示だけされます）。同じものは 1 局に 1 回まで。
-          <br /><strong>トロフィーを押すと、その手や形を見本の局面で指して確かめられます。</strong>
+          <br /><strong>トロフィーを押すと、その形に至る手順をリプレイし、決め手を自分で指して確かめられます。</strong>
         </p>
       </header>
 
@@ -85,9 +97,9 @@ export default function Trophies() {
         <div className="card"><div className="muted small">集めた種類</div><b>{earnedCount + openCount}<span className="muted"> / {TROPHIES.length + openings.length}</span></b></div>
       </div>
 
-      {CATS.map((cat) => (
+      {CATS.map(({ cat, what }) => (
         <section key={cat}>
-          <h3 className="picker-group">{cat}</h3>
+          <h3 className="picker-group">{cat} <span className="muted small">— {what}</span></h3>
           <div className="trophy-grid">
             {TROPHIES.filter((t) => t.cat === cat).map((t) => {
               const e = got(t.id);
@@ -113,7 +125,7 @@ export default function Trophies() {
           {openings.map((o) => {
             const e = got(`open:${o.name}`);
             return (
-              <button key={o.name} className={`op-chip ${e ? "got" : ""}`} title={e ? `${e.n} 回` : "未達成"} onClick={() => openOpening(o)}>
+              <button key={o.name} className={`op-chip ${e ? "got" : ""}`} title={e ? `${e.n} 回` : "未獲得"} onClick={() => openOpening(o)}>
                 {o.name} <b>+{o.pts}</b>
               </button>
             );
@@ -121,76 +133,126 @@ export default function Trophies() {
         </div>
       </section>
 
-      {demo && <DemoModal key={demo.title} demo={demo} onClose={() => setDemo(undefined)} />}
+      <p className="muted small" style={{ marginTop: 24, lineHeight: 1.8 }}>
+        収録していない名前：{NOT_COVERED.join("、")}。いずれも「指した手の意図」や「ほかに何が指せたか」で決まり、盤面の形だけでは判定できないため外しています。
+      </p>
+
+      {demo && <DemoModal key={demo.id} demo={demo} onClose={() => setDemo(undefined)} />}
     </div>
   );
 }
 
-/** A small board: play the move(s) of the pattern yourself. Opponent replies play themselves. */
+interface Pos {
+  fen: string;
+  from?: string;
+  to?: string;
+  san?: string;
+}
+function replay(fen: string, moves: (string | Mv)[]): Pos[] {
+  const c = new Chess(fen);
+  const out: Pos[] = [{ fen: c.fen() }];
+  for (const x of moves) {
+    const m = c.move(typeof x === "string" ? x : x);
+    out.push({ fen: c.fen(), from: m.from, to: m.to, san: m.san });
+  }
+  return out;
+}
+const uciMv = (u: string): Mv => ({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
+const numbered = (ps: Pos[]) =>
+  ps.slice(1).map((p, i) => {
+    const [, turn, , , , full] = ps[i].fen.split(" ");
+    return turn === "w" ? `${full}.${p.san}` : i === 0 ? `${full}…${p.san}` : p.san;
+  }).join(" ");
+
+/** Replay the route, then play the move(s) yourself. Opponent replies play themselves. */
 function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
-  const [step, setStep] = useState(0); // plies of the line already on the board
-  const [alt, setAlt] = useState<{ fen: string; from: string; to: string }>(); // another move that also earns it
-  const [auto, setAuto] = useState(false); // playing the model line
+  const leadPos = useMemo(() => replay(demo.fen ?? START, demo.lead ?? []), [demo]);
+  const moment = leadPos[leadPos.length - 1];
+  const linePos = useMemo(() => replay(moment.fen, demo.line.map(uciMv)), [demo, moment]);
+  const me = moment.fen.split(" ")[1] as "w" | "b";
+  const total = demo.line.length;
+
+  const [step, setStep] = useState(0); // plies of the line on the board
+  const [alt, setAlt] = useState<Pos & { before: string; m: Mv }>(); // another move that also earns it
+  const [rep, setRep] = useState<{ i: number; full: boolean }>(); // replaying: index into lead+line
   const [hint, setHint] = useState(false);
+  const [assist, setAssistState] = useState<boolean>(() => load("dojo.demo.assist", true));
+  const setAssist = (v: boolean) => {
+    setAssistState(v);
+    save("dojo.demo.assist", v);
+  };
   const [miss, setMiss] = useState<{ sq: string; n: number; san: string }>();
   const [animKey, setAnimKey] = useState(0);
+  const [sel, setSel] = useState<string | null>(null);
+  const [lines, setLines] = useState<EngineLine[]>([]);
+  const [pieceLines, setPieceLines] = useState<EngineLine[]>([]);
 
-  const positions = useMemo(() => {
-    const c = new Chess(demo.fen);
-    const out: { fen: string; from?: string; to?: string; san?: string }[] = [{ fen: c.fen() }];
-    for (const u of demo.line) {
-      const m = c.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u[4] });
-      out.push({ fen: c.fen(), from: m.from, to: m.to, san: m.san });
-    }
-    return out;
-  }, [demo]);
-  const me = demo.fen.split(" ")[1] as "w" | "b";
-  const total = demo.line.length;
   const done = !!alt || step >= total;
-  const here = alt ?? positions[Math.min(step, total)];
-  const myTurn = !done && !auto && step % 2 === 0;
+  const seq = useMemo(() => [...leadPos, ...linePos.slice(1)], [leadPos, linePos]);
+  const leadLen = leadPos.length - 1;
+  const here: Pos = rep ? seq[rep.i] : alt ?? linePos[Math.min(step, total)];
+  const myTurn = !rep && !done && step % 2 === 0;
 
-  // the opponent's replies, and the model line, play themselves
+  // the opponent's replies play themselves
   useEffect(() => {
-    if (done || !(auto || step % 2 === 1)) return;
+    if (rep || done || step % 2 === 0) return;
     const t = setTimeout(() => {
       setStep(step + 1);
       setAnimKey((k) => k + 1);
       sfx.move();
-    }, auto ? 900 : 500);
+    }, 550);
     return () => clearTimeout(t);
-  }, [step, auto, done]);
+  }, [step, rep, done]);
+  // replay: the route (and with "手本", the move itself)
   useEffect(() => {
-    if (done) setAuto(false);
-  }, [done]);
+    if (!rep) return;
+    const end = rep.full ? seq.length - 1 : leadLen;
+    if (rep.i >= end) {
+      const t = setTimeout(() => {
+        setRep(undefined);
+        setStep(rep.full ? total : 0);
+      }, 400);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => {
+      setRep({ ...rep, i: rep.i + 1 });
+      setAnimKey((k) => k + 1);
+      sfx.move();
+    }, rep.i < leadLen ? 520 : 900);
+    return () => clearTimeout(t);
+  }, [rep, seq.length, leadLen, total]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const restart = () => {
+  const reset = () => {
     setStep(0);
     setAlt(undefined);
-    setAuto(false);
+    setRep(undefined);
     setHint(false);
     setMiss(undefined);
   };
+  /** The same side's earlier moves in the line (for patterns that span moves, like the windmill). */
+  const ctxAt = (k: number): MoveCtx => ({
+    prevOwn: demo.line.slice(0, k).map((u, i) => ({ fenBefore: linePos[i].fen, move: uciMv(u) })).filter((_, i) => i % 2 === 0),
+  });
 
   const onMove = (from: string, to: string, promotion?: string) => {
     if (!myTurn) return;
     const want = demo.line[step];
     const isLast = step === total - 1;
-    const same = from + to === want.slice(0, 4);
+    const same = from + to === want.slice(0, 4) && (!want[4] || want[4] === promotion);
     const c = new Chess(here.fen);
     const m = c.move({ from, to, promotion });
-    if (same || (isLast && demo.earns(here.fen, { from, to, promotion }))) {
+    if (same || (isLast && demo.earns(here.fen, { from, to, promotion }, ctxAt(step)))) {
       setMiss(undefined);
       setHint(false);
       setAnimKey((k) => k + 1);
       (m.captured ? sfx.capture : sfx.move)();
       if (same) setStep(step + 1);
-      else setAlt({ fen: c.fen(), from, to });
+      else setAlt({ fen: c.fen(), from, to, san: m.san, before: here.fen, m: { from, to, promotion } });
       if (isLast) sfx.good();
       return;
     }
@@ -198,9 +260,54 @@ function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
     sfx.wrong();
   };
 
+  // the picture: the formation's shape before the move, what the move does after it
+  let arrows: Arrow[] = [];
+  let marks: SquareMark[] = [];
+  let pic: ReturnType<typeof illustrate> | undefined;
+  const lastIdx = rep ? (rep.i > leadLen ? rep.i - leadLen - 1 : -1) : alt ? total - 1 : step - 1;
+  if (assist && !rep && done) {
+    pic = alt ? illustrate(alt.before, alt.m, demo.id, demo.show) : illustrate(linePos[total - 1].fen, uciMv(demo.line[total - 1]), demo.id, demo.show);
+  } else if (assist && !rep && lastIdx >= 0 && lastIdx % 2 === 0) {
+    pic = illustrate(linePos[lastIdx].fen, uciMv(demo.line[lastIdx]), undefined, undefined);
+  }
+  if (pic) {
+    arrows = pic.arrows;
+    marks = pic.marks;
+  } else if (assist && myTurn && demo.show) {
+    marks = demo.show.map((s) => ({ sq: s, from: s, kind: "ok" as const, share: 0.7, label: "形" }));
+  }
+  // Square colouring, as on the explore board: where the strong moves go (book % or engine),
+  // and with a piece in hand, a grade for every square it can reach.
+  const fenNow = here.fen;
+  const book = useMemo(() => candidates(fenNow), [fenNow]);
+  const pieceUcis = useMemo(() => {
+    if (!sel) return [];
+    return new Chess(fenNow).moves({ square: sel as never, verbose: true }).filter((m) => !m.promotion || m.promotion === "q").map((m) => m.from + m.to + (m.promotion ?? ""));
+  }, [fenNow, sel]);
+  useEffect(() => {
+    setLines([]);
+    setPieceLines([]);
+    if (!assist || !myTurn) return;
+    let live = true;
+    if (sel && pieceUcis.length) engine.run({ fen: fenNow, searchmoves: pieceUcis, multipv: pieceUcis.length, depth: 11 }).then((l) => live && setPieceLines(l));
+    else if (!book.length) engine.run({ fen: fenNow, multipv: 4, depth: 12 }).then((l) => live && setLines(l));
+    return () => {
+      live = false;
+    };
+  }, [fenNow, assist, myTurn, sel, pieceUcis, book.length]);
+  if (assist && myTurn) {
+    let heat: SquareMark[] = [];
+    if (sel) heat = gradedMarks(fenNow, gradePiece(fenNow, sel, pieceLines, new Set(book.map((c) => c.san))), true);
+    else if (book.length) heat = bookMarks(book);
+    else if (lines.length) heat = engineMarksArrows(fenNow, lines).marks;
+    const shape = marks.filter((m) => !heat.some((h) => h.sq === m.sq));
+    marks = [...shape, ...heat];
+  }
   const want = demo.line[step];
-  const arrows: Arrow[] = hint && myTurn && want ? [{ from: want.slice(0, 2), to: want.slice(2, 4), color: "#ff541c", width: 16, opacity: 0.85 }] : [];
-  const sans = positions.slice(1).map((p, i) => (i % 2 === 0 ? p.san : `(${p.san})`)).join(" ");
+  if (hint && myTurn && want) arrows = [...arrows, { from: want.slice(0, 2), to: want.slice(2, 4), color: "#ff541c", width: 16, opacity: 0.85 }];
+
+  const lineText = numbered(alt ? [linePos[0], { ...alt }] : linePos.slice(0, total + 1));
+  const leadText = numbered(leadPos);
 
   return (
     <div className="demo-backdrop" onClick={onClose}>
@@ -220,29 +327,58 @@ function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
             movable={myTurn ? me : "none"}
             onMove={onMove}
             arrows={arrows}
+            marks={marks}
+            showMarks
+            onSelect={setSel}
             flash={miss ? { sq: miss.sq, n: miss.n } : undefined}
-            badge={done && here.to ? { sq: here.to, kind: "best" } : undefined}
+            badge={done && !rep && here.to ? { sq: here.to, kind: "best" } : undefined}
             animKey={animKey}
             glow={false}
           />
         </div>
-        <div className={`demo-status ${done ? "ok" : miss ? "ng" : ""}`}>
-          {done
-            ? `✓ これが「${demo.title}」です。${total > 1 ? `手順：${sans}` : ""}`
-            : auto
-              ? "手本を再生中…"
+
+        <div className={`demo-status ${done && !rep ? "ok" : miss ? "ng" : ""}`}>
+          {rep
+            ? rep.i <= leadLen
+              ? `${demo.source ? `${demo.source}：` : ""}ここに至る手順を再生中… ${rep.i}/${leadLen}`
+              : "決め手を再生中…"
+            : done
+              ? `✓ これが「${demo.title}」です。${total > 1 || alt ? `手順：${lineText}` : ""}`
               : miss
                 ? `${miss.san} ではありません。もう一度どうぞ。`
                 : step % 2 === 1
                   ? "相手が応じています…"
                   : `${me === "w" ? "白" : "黒"}番。${demo.tip ?? "この局面で指してみてください。"}`}
         </div>
+
+        {pic && (pic.notes.length > 0 || pic.legend.length > 0) && (
+          <div className="demo-pic">
+            {pic.legend.map((l) => (
+              <span key={l.text} className="demo-legend"><i style={{ background: l.color }} />{l.text}</span>
+            ))}
+            {pic.notes.length > 0 && <ul>{pic.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+          </div>
+        )}
+
+        {leadLen > 0 && (
+          <div className="demo-route muted small">
+            {demo.source && <b>{demo.source}　</b>}ここまでの手順：{leadText}
+          </div>
+        )}
+
+        {assist && myTurn && (
+          <div className="demo-legend-line muted small">
+            {sel ? "選んだ駒の行き先を採点：緑＝良い・黄＝疑問手・橙＝悪手・赤＝ブランダー（数値は手番側から見た評価）" : book.length ? "色が濃いマスほど有力（% ＝ この局面で指される割合）。駒を選ぶと、その駒の行き先を採点します。" : "色が濃いマスほど有力（数値はエンジンの評価）。駒を選ぶと、その駒の行き先を採点します。"}
+          </div>
+        )}
         <div className="demo-actions">
-          {!done && <button className="chip" disabled={!myTurn} onClick={() => setHint(true)}>💡 ヒント</button>}
-          <button className="chip" onClick={() => { restart(); setAuto(true); }}>▶ 手本を見る</button>
-          <button className="chip" onClick={restart}>⟲ やり直す</button>
-          <span className="muted small">参考の盤なので、ここでは点は入りません。</span>
+          <button className={`chip ${assist ? "on" : ""}`} onClick={() => setAssist(!assist)} title="有力なマスの着色、選んだ駒の採点、指した手の攻めの筋・チェックの線・詰みの逃げ道を盤に描く">補助：{assist ? "ON" : "OFF"}</button>
+          {leadLen > 0 && <button className="chip" onClick={() => { reset(); setRep({ i: 0, full: false }); }}>▶ ここに至る手順</button>}
+          <button className="chip" onClick={() => { reset(); setRep({ i: leadLen > 0 ? 0 : leadLen, full: true }); }}>▶ 手本を通しで見る</button>
+          {!done && !rep && <button className="chip" disabled={!myTurn} onClick={() => setHint(true)}>💡 ヒント</button>}
+          <button className="chip" onClick={reset}>⟲ やり直す</button>
         </div>
+        <div className="muted small" style={{ marginTop: 6 }}>参考の盤なので、ここでは点は入りません。</div>
       </div>
     </div>
   );

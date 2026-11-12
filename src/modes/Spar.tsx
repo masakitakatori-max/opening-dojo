@@ -450,7 +450,7 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
   // A sacrifice the engine approves of (!!) is only known once the analysis arrives.
   useEffect(() => {
     reviews.forEach((r, k) => {
-      if (r?.verdict === "brilliant" && moves[k]?.by === "me") art.brilliant(colorOf(moves[k]), !assist.on);
+      if (r?.verdict === "brilliant" && moves[k]?.by === "me") art.brilliant(colorOf(moves[k]), !assist.on, moves[k].before, moves[k]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviews]);

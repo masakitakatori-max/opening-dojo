@@ -112,10 +112,14 @@ export default function Board(p: Props) {
     return p.orientation === "w" ? sqName(fx, 7 - fy) : sqName(7 - fx, fy);
   };
 
+  // A pawn reaching the last rank: ask which piece it becomes (queen first).
+  const [promo, setPromo] = useState<{ from: string; to: string; color: string } | null>(null);
+  useEffect(() => setPromo(null), [p.fen]);
   const tryMove = (from: string, to: string) => {
     const mv = chess.moves({ square: from as Square, verbose: true }).find((m) => m.to === to);
     if (!mv) return false;
-    p.onMove(from, to, mv.promotion ? "q" : undefined);
+    if (mv.promotion) setPromo({ from, to, color: mv.color });
+    else p.onMove(from, to, undefined);
     setSelected(null);
     return true;
   };
@@ -289,6 +293,20 @@ export default function Board(p: Props) {
           })}
         </svg>
         {p.banner && <div className="board-banner">{p.banner}</div>}
+        {promo && (
+          <div className="promo-backdrop" onPointerDown={(e) => { e.stopPropagation(); setPromo(null); }}>
+            <div className="promo-box" onPointerDown={(e) => e.stopPropagation()}>
+              <div className="promo-title">昇格する駒</div>
+              <div className="promo-row">
+                {(["q", "n", "r", "b"] as const).map((x) => (
+                  <button key={x} className="promo-piece" onClick={() => { const m = promo; setPromo(null); p.onMove(m.from, m.to, x); }}>
+                    <img src={`${BASE}pieces/${promo.color}${x.toUpperCase()}.svg`} alt={x} draggable={false} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {drag && draggedRef.current && (
         <img
