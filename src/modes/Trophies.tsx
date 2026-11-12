@@ -8,6 +8,7 @@ import { bookMarks, engineMarksArrows } from "../components/panels";
 import { engine, type EngineLine } from "../lib/engine";
 import { illustrate } from "../lib/illustrate";
 import { gradedMarks, gradePiece } from "../lib/review";
+import { SpeedSlider, useReplaySpeed } from "../lib/replaySpeed";
 import { sfx } from "../lib/sound";
 import { load, save } from "../lib/storage";
 import { candidates, namedNodes, openingChain, pathTo } from "../lib/tree";
@@ -174,7 +175,9 @@ function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
 
   const [step, setStep] = useState(0); // plies of the line on the board
   const [alt, setAlt] = useState<Pos & { before: string; m: Mv }>(); // another move that also earns it
-  const [rep, setRep] = useState<{ i: number; full: boolean }>(); // replaying: index into lead+line
+  // replaying: index into lead+line; `paused` = stepping by hand
+  const [rep, setRep] = useState<{ i: number; full: boolean; paused: boolean }>();
+  const [speed] = useReplaySpeed();
   const [hint, setHint] = useState(false);
   const [assist, setAssistState] = useState<boolean>(() => load("dojo.demo.assist", true));
   const setAssist = (v: boolean) => {
@@ -200,27 +203,40 @@ function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
       setStep(step + 1);
       setAnimKey((k) => k + 1);
       sfx.move();
-    }, 550);
+    }, Math.max(400, speed * 0.7));
     return () => clearTimeout(t);
-  }, [step, rep, done]);
+  }, [step, rep, done, speed]);
   // replay: the route (and with "手本", the move itself)
-  useEffect(() => {
+  const repEnd = rep ? (rep.full ? seq.length - 1 : leadLen) : 0;
+  const finishRep = () => {
     if (!rep) return;
-    const end = rep.full ? seq.length - 1 : leadLen;
-    if (rep.i >= end) {
-      const t = setTimeout(() => {
-        setRep(undefined);
-        setStep(rep.full ? total : 0);
-      }, 400);
+    setRep(undefined);
+    setStep(rep.full ? total : 0);
+  };
+  const stepRep = (d: number) => {
+    if (!rep) return;
+    const i = Math.max(0, Math.min(repEnd, rep.i + d));
+    if (i === rep.i) return;
+    setRep({ ...rep, i, paused: true });
+    if (d > 0) {
+      setAnimKey((k) => k + 1);
+      sfx.move();
+    }
+  };
+  useEffect(() => {
+    if (!rep || rep.paused) return;
+    if (rep.i >= repEnd) {
+      const t = setTimeout(finishRep, Math.min(900, speed));
       return () => clearTimeout(t);
     }
     const t = setTimeout(() => {
       setRep({ ...rep, i: rep.i + 1 });
       setAnimKey((k) => k + 1);
       sfx.move();
-    }, rep.i < leadLen ? 520 : 900);
+    }, rep.i < leadLen ? speed : speed * 1.3);
     return () => clearTimeout(t);
-  }, [rep, seq.length, leadLen, total]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rep, repEnd, leadLen, speed]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -339,9 +355,7 @@ function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
 
         <div className={`demo-status ${done && !rep ? "ok" : miss ? "ng" : ""}`}>
           {rep
-            ? rep.i <= leadLen
-              ? `${demo.source ? `${demo.source}：` : ""}ここに至る手順を再生中… ${rep.i}/${leadLen}`
-              : "決め手を再生中…"
+            ? `${rep.i <= leadLen ? `${demo.source ? `${demo.source}：` : ""}ここに至る手順` : "決め手"}${rep.paused ? "（一時停止中：◀ ▶ で 1 手ずつ）" : "を再生中…"} ${rep.i}/${repEnd}${here.san ? `　${here.san}` : ""}`
             : done
               ? `✓ これが「${demo.title}」です。${total > 1 || alt ? `手順：${lineText}` : ""}`
               : miss
@@ -371,10 +385,23 @@ function DemoModal({ demo, onClose }: { demo: Demo; onClose: () => void }) {
             {sel ? "選んだ駒の行き先を色で採点：緑＝良い（★最善）・黄＝疑問手・橙＝悪手・赤＝ブランダー。評価の数値は出しません。" : book.length ? "色が濃いマスほど有力（% ＝ この局面で指される割合）。駒を選ぶと、その駒の行き先を採点します。" : "色が濃いマスほど有力（数値はエンジンの評価）。駒を選ぶと、その駒の行き先を採点します。"}
           </div>
         )}
+        {rep && (
+          <div className="demo-player">
+            <button onClick={() => setRep({ ...rep, i: 0, paused: true })} title="最初へ">⏮</button>
+            <button onClick={() => stepRep(-1)} disabled={rep.i === 0} title="1 手戻る">◀</button>
+            <button className="primary" onClick={() => (rep.i >= repEnd ? finishRep() : setRep({ ...rep, paused: !rep.paused }))} title={rep.paused ? "再生" : "一時停止"}>
+              {rep.i >= repEnd ? "▶ 続きを指す" : rep.paused ? "▶ 再生" : "⏸ 一時停止"}
+            </button>
+            <button onClick={() => stepRep(1)} disabled={rep.i >= repEnd} title="1 手進む">▶</button>
+            <button onClick={finishRep} title="最後へ（指す局面へ）">⏭</button>
+          </div>
+        )}
+        {(rep || leadLen > 0 || total > 1) && <SpeedSlider compact />}
         <div className="demo-actions">
           <button className={`chip ${assist ? "on" : ""}`} onClick={() => setAssist(!assist)} title="有力なマスの着色、選んだ駒の採点、指した手の攻めの筋・チェックの線・詰みの逃げ道を盤に描く">補助：{assist ? "ON" : "OFF"}</button>
-          {leadLen > 0 && <button className="chip" onClick={() => { reset(); setRep({ i: 0, full: false }); }}>▶ ここに至る手順</button>}
-          <button className="chip" onClick={() => { reset(); setRep({ i: leadLen > 0 ? 0 : leadLen, full: true }); }}>▶ 手本を通しで見る</button>
+          {leadLen > 0 && <button className="chip" onClick={() => { reset(); setRep({ i: 0, full: false, paused: false }); }}>▶ ここに至る手順</button>}
+          {leadLen > 0 && <button className="chip" onClick={() => { reset(); setRep({ i: 0, full: false, paused: true }); }}>👣 1 手ずつ見る</button>}
+          <button className="chip" onClick={() => { reset(); setRep({ i: 0, full: true, paused: false }); }}>▶ 手本を通しで見る</button>
           {!done && !rep && <button className="chip" disabled={!myTurn} onClick={() => setHint(true)}>💡 ヒント</button>}
           <button className="chip" onClick={reset}>⟲ やり直す</button>
         </div>

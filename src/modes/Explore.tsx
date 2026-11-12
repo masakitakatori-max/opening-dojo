@@ -10,6 +10,7 @@ import { hangingPieces } from "../lib/tactics";
 import { sfx } from "../lib/sound";
 import { load, save } from "../lib/storage";
 import { ArtCard, ArtToast, useArt } from "../lib/useArt";
+import { SpeedSlider, useReplaySpeed } from "../lib/replaySpeed";
 import { candidates, getNode, mainContinuation, openingOf } from "../lib/tree";
 
 export interface Settings {
@@ -46,6 +47,7 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
   const [pieceLines, setPieceLines] = useState<EngineLine[]>([]);
   const [banner, setBanner] = useState<{ text: string; eco?: string; n: number }>();
   const [autoplay, setAutoplay] = useState(false);
+  const [speed] = useReplaySpeed();
   const [animKey, setAnimKey] = useState(0);
   const prevPly = useRef(ply);
   // GM ghosts
@@ -209,9 +211,9 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
   // Following a game: the opponent's replies play themselves, you play the master's side.
   useEffect(() => {
     if (!followNext || ply !== moves.length || turn === followColor) return;
-    const t = setTimeout(() => pushSan(followNext, ply), 800);
+    const t = setTimeout(() => pushSan(followNext, ply), speed);
     return () => clearTimeout(t);
-  }, [followNext, followColor, ply, moves.length, turn, pushSan]);
+  }, [followNext, followColor, ply, moves.length, turn, pushSan, speed]);
   const hideHints = !!follow && guess && turn === followColor && follow.ply !== undefined;
 
   // Autoplay the main line
@@ -222,9 +224,9 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
       setAutoplay(false);
       return;
     }
-    const t = setTimeout(() => pushSan(next.san, ply), 750);
+    const t = setTimeout(() => pushSan(next.san, ply), speed);
     return () => clearTimeout(t);
-  }, [autoplay, fen, ply, pushSan]);
+  }, [autoplay, fen, ply, pushSan, speed]);
 
   // Keyboard
   useEffect(() => {
@@ -479,6 +481,7 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
             <button title="盤を反転 (F)" onClick={() => setOrientation((o) => (o === "w" ? "b" : "w"))}>⇅</button>
             <button title={selfPlay ? "新しい対局" : "リセット"} onClick={() => { setMoves([]); setPly(0); setAutoplay(false); art.reset(); }}>⟲</button>
           </div>
+          {(autoplay || follow) && <div className="controls-speed"><SpeedSlider compact /></div>}
         </div>
       </aside>
     </div>

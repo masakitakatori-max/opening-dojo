@@ -662,3 +662,15 @@ button.op-chip:hover { color: #fff; }
 .demo-modal { max-height: calc(100dvh - 24px); overflow-y: auto; }
 
 .demo-legend-line { margin-top: 6px; line-height: 1.6; }
+
+/* ── replay speed & step controls ── */
+.speed { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); margin-top: 8px; }
+.speed input { flex: 1; min-width: 80px; accent-color: var(--green); height: 28px; }
+.speed-end { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.speed-val { font-weight: 800; min-width: 74px; text-align: right; white-space: nowrap; }
+.controls-speed { padding: 0 12px 10px; }
+.controls-speed .speed { margin-top: 0; }
+.demo-player { display: flex; gap: 6px; margin-top: 8px; }
+.demo-player button { flex: 1; height: 42px; border-radius: 6px; background: #3a3733; font-size: 15px; font-weight: 800; }
+.demo-player button:disabled { opacity: .35; }
+.demo-player button.primary { flex: 2.4; font-size: 13px; white-space: nowrap; }
