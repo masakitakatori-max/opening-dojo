@@ -422,7 +422,7 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
             {hideHints ? (
               <>🙈 当てるモード：{jaName(follow!.info.player)}ならどう指すか、盤上で指してください。</>
             ) : sel ? (
-              <>選んだ駒の行き先を採点中：<span className="v v-brilliant">!! 妙手</span><span className="v v-best">★最善</span><span className="v v-inaccuracy">?! 疑問手</span><span className="v v-mistake">? 悪手</span><span className="v v-blunder">?? ブランダー</span>　数値は手番側から見て <span className="tone-pos">＋有利</span>／<span className="tone-neg">−不利</span>。理由は右パネル。</>
+              <>選んだ駒の行き先を採点中：<span className="v v-brilliant">!! 妙手</span><span className="v v-best">★最善</span><span className="v v-inaccuracy">?! 疑問手</span><span className="v v-mistake">? 悪手</span><span className="v v-blunder">?? ブランダー</span>　色で採点（数値と理由は右パネル）。</>
             ) : cands.length > 0 ? (
               <><b>%</b> = この局面で強い人がその手を指す割合{ghosts.length > 0 && <>　👻 = GM が実戦で指した手</>}</>
             ) : settings.engine ? (

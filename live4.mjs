@@ -1,0 +1,11 @@
+import { chromium } from "playwright-core";
+const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--mute-audio"] });
+const page = await (await browser.newContext({ viewport: { width: 393, height: 760 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: UA })).newPage();
+await page.goto("https://masakitakatori-max.github.io/opening-dojo/?v=" + Date.now());
+await page.waitForSelector(".nav");
+await page.locator('.nav:has-text("トロフィー")').tap(); await page.waitForSelector(".trophy-grid");
+console.log("公開サイトのトロフィー数:", await page.locator("button.trophy").count(), "| オクトパス:", await page.locator('.trophy-name:text-is("オクトパス・ナイト")').count());
+await page.locator('button.trophy:has(.trophy-name:text-is("ボーデンのメイト"))').tap(); await page.waitForSelector(".demo-modal");
+console.log("手順のリプレイ欄:", (await page.$eval(".demo-route", (e) => e.textContent)).slice(0, 40));
+await browser.close();

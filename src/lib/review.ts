@@ -77,16 +77,16 @@ export function gradePiece(fen: string, sel: string, pieceLines: EngineLine[], b
   });
 }
 
-export function gradedMarks(fen: string, graded: Graded[], useDanger: boolean): SquareMark[] {
-  const color = fen.split(" ")[1] as Color;
+export function gradedMarks(_fen: string, graded: Graded[], useDanger: boolean): SquareMark[] {
+  // On the board the colour says it all: no numbers, just the short verdict symbol (★ !! ?! ? ??).
+  // The evaluations stay in the side panel.
   const out: SquareMark[] = [];
   for (const g of graded) {
     if (g.verdict && g.line) {
-      const e = povEval(g.line, color);
       const sym = g.verdict === "good" ? "" : VERDICT_LABEL[g.verdict].sym;
-      out.push({ sq: g.to, from: g.from, kind: `v-${g.verdict}`, share: 1, label: `${g.book ? "📖" : ""}${e.text}`, sym: sym || undefined, tone: e.tone });
+      out.push({ sq: g.to, from: g.from, kind: `v-${g.verdict}`, share: 1, label: sym || undefined });
     } else if (useDanger && g.danger && !g.book) {
-      out.push({ sq: g.to, from: g.from, kind: "danger", share: 1, label: g.danger.mate ? "詰" : `-${g.danger.loss}`, tone: "neg" });
+      out.push({ sq: g.to, from: g.from, kind: "danger", share: 1, label: g.danger.mate ? "詰" : undefined });
     }
   }
   return out;
