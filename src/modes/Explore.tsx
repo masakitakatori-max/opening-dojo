@@ -11,7 +11,14 @@ import { sfx } from "../lib/sound";
 import { load, save } from "../lib/storage";
 import { ArtCard, ArtToast, useArt } from "../lib/useArt";
 import { SpeedSlider, useReplaySpeed } from "../lib/replaySpeed";
-import { candidates, getNode, mainContinuation, openingOf } from "../lib/tree";
+import { candidates, getNode, mainContinuation, namedNodes, openingChain, openingOf, pathTo } from "../lib/tree";
+
+// Replay modules: every named opening can be attached to the auto-replay, which then plays the way to it.
+const MODULES = namedNodes()
+  .map((n) => ({ name: n.info!.name!, path: pathTo(n), family: openingChain(n).slice(0, 2).map((c) => c.info!.name!).join(" › ") }))
+  .sort((a, b) => a.path.length - b.path.length)
+  .filter((m, i, a) => a.findIndex((x) => x.name === m.name) === i);
+const MODULE_GROUPS = [...new Set(MODULES.map((m) => m.family))];
 
 export interface Settings {
   marks: boolean;
@@ -216,17 +223,39 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
   }, [followNext, followColor, ply, moves.length, turn, pushSan, speed]);
   const hideHints = !!follow && guess && turn === followColor && follow.ply !== undefined;
 
-  // Autoplay the main line
+  // Auto-replay. With a module (a named opening) attached it plays the way to that opening and stops there;
+  // without one it follows the most played move.
+  const moduleKey = selfPlay ? "dojo.self.module" : "dojo.explore.module";
+  const [moduleName, setModuleName] = useState<string>(() => load(moduleKey, ""));
+  const module = MODULES.find((m) => m.name === moduleName);
+  const played = moves.slice(0, ply);
+  const onWay = !!module && ply < module.path.length && played.every((m, i) => module.path[i] === m);
+  const arrived = !!module && ply >= module.path.length && module.path.every((m, i) => played[i] === m);
+  const offWay = !!module && !onWay && !arrived;
+  const startReplay = () => {
+    if (autoplay) return setAutoplay(false);
+    if (offWay) {
+      setMoves([]);
+      setPly(0);
+      art.reset();
+    }
+    setAutoplay(true);
+  };
   useEffect(() => {
     if (!autoplay) return;
-    const next = mainContinuation(fen, 1)[0];
+    if (module && arrived && ply === module.path.length) {
+      setAutoplay(false); // the opening is on the board: over to the player
+      return;
+    }
+    const next = onWay ? { san: module!.path[ply] } : mainContinuation(fen, 1)[0];
     if (!next) {
       setAutoplay(false);
       return;
     }
     const t = setTimeout(() => pushSan(next.san, ply), speed);
     return () => clearTimeout(t);
-  }, [autoplay, fen, ply, pushSan, speed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoplay, fen, ply, pushSan, speed, moduleName]);
 
   // Keyboard
   useEffect(() => {
@@ -473,14 +502,31 @@ export default function Explore({ initial, settings: raw, setSettings, onSpar, s
           <div className="controls">
             <button title="最初へ (↑)" onClick={() => jump(0)}>⏮</button>
             <button title="1 手戻る (←)" onClick={() => jump(ply - 1)}>◀</button>
-            <button className={`primary ${autoplay ? "on" : ""}`} onClick={() => setAutoplay((a) => !a)} disabled={hidden || (!cands.length && !autoplay)}>
-              {autoplay ? "■ 停止" : "▶ 主線再生"}
+            <button className={`primary ${autoplay ? "on" : ""}`} onClick={startReplay} disabled={!autoplay && (module ? arrived && !cands.length : hidden || !cands.length)}>
+              {autoplay ? "■ 停止" : !module ? "▶ 主線再生" : offWay ? "▶ 型を最初から" : arrived ? "▶ 続きを再生" : "▶ 型まで再生"}
             </button>
             <button title="1 手進む (→)" onClick={() => jump(ply + 1)}>▶</button>
             <button title="最後へ (↓)" onClick={() => jump(moves.length)}>⏭</button>
             <button title="盤を反転 (F)" onClick={() => setOrientation((o) => (o === "w" ? "b" : "w"))}>⇅</button>
             <button title={selfPlay ? "新しい対局" : "リセット"} onClick={() => { setMoves([]); setPly(0); setAutoplay(false); art.reset(); }}>⟲</button>
           </div>
+          <div className="replay-module">
+            <span className="muted small">再生する型</span>
+            <select value={moduleName} onChange={(e) => { setModuleName(e.target.value); save(moduleKey, e.target.value); setAutoplay(false); }}>
+              <option value="">なし（いちばん多く指される手）</option>
+              {MODULE_GROUPS.map((g) => (
+                <optgroup key={g} label={g}>
+                  {MODULES.filter((m) => m.family === g).map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            {module && <button className="chip" onClick={() => { setModuleName(""); save(moduleKey, ""); setAutoplay(false); }}>外す</button>}
+          </div>
+          {module && (
+            <div className="replay-module-note muted small">
+              {arrived ? `「${module.name}」の形です。ここから自分で指せます。` : offWay ? `いまの手順は「${module.name}」から外れています。再生すると最初からやり直します。` : `「${module.name}」まで ${module.path.length - ply} 手：${module.path.map((m, i) => (i % 2 === 0 ? `${i / 2 + 1}.${m}` : m)).join(" ")}`}
+            </div>
+          )}
           {(autoplay || follow) && <div className="controls-speed"><SpeedSlider compact /></div>}
         </div>
       </aside>

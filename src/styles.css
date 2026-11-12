@@ -691,3 +691,8 @@ button.op-chip:hover { color: #fff; }
   .demo-modal > .demo-head { grid-column: 1 / -1; }
   .demo-modal > .demo-notes { grid-column: 2; grid-row: 2 / span 12; margin-top: 0; border-top: 0; padding-top: 0; max-height: calc(100dvh - 140px); overflow-y: auto; }
 }
+
+/* ── replay module (a named opening attached to the auto-replay) ── */
+.replay-module { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; }
+.replay-module select { flex: 1; min-width: 0; background: #171613; border: 1px solid var(--line); color: #fff; padding: 7px 8px; border-radius: 6px; font: inherit; }
+.replay-module-note { padding: 0 12px 10px; line-height: 1.6; }
