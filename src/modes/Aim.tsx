@@ -6,6 +6,7 @@ import { Reasons } from "../components/panels";
 import { AIMS, LEVELS, levelOf, type Aim, type AimData, type PuzzleRow } from "../data/aims";
 import type { EngineLine } from "../lib/engine";
 import { explainMove } from "../lib/explain";
+import { loadTactic, TACTIC_PROVISIONAL, updateTactic } from "../lib/rating";
 import { sfx } from "../lib/sound";
 import { useScrollTop } from "../lib/useScrollTop";
 import { load, pickLine, recordResult, save, type CourseStats } from "../lib/storage";
@@ -57,6 +58,7 @@ export default function AimMode() {
   if (aimId) return <Session key={`${aimId}-${level}`} data={data} aimId={aimId} level={level} setLevel={setLevel} onBack={() => setAimId(null)} />;
 
   const stats = load<CourseStats>(STATS_KEY, {});
+  const tactic = loadTactic();
   const progress = (id: string) => {
     const pool = poolOf(data, id, level);
     return { total: pool.length, clean: pool.filter((p) => (stats[p.key]?.clean ?? 0) > 0).length, seen: pool.filter((p) => stats[p.key]).length };
@@ -79,6 +81,13 @@ export default function AimMode() {
           間違えた問題ほど早く再出題されます。形が入ったら、狙いを伏せた<strong>ミックス</strong>で「実戦で気づけるか」を試してください。
         </p>
         {levelChips}
+        <div className="tactic-rating">
+          戦術の推定レート <b>{tactic.n ? tactic.r : "—"}</b>
+          <span className="muted small">
+            {tactic.n === 0 ? "　初めての問題を解くと出ます" : `　初見 ${tactic.n} 問から推定${tactic.n < TACTIC_PROVISIONAL ? `（暫定：${TACTIC_PROVISIONAL} 問までは大きく動きます）` : ""}`}
+            　問題の難度（Lichess のパズルレート）を相手に見立てた計算です。ヒントやミスがあると負け扱い。
+          </span>
+        </div>
       </header>
 
       <div className="course-grid" style={{ marginTop: 18 }}>
@@ -140,6 +149,7 @@ function Session({ data, aimId, level, setLevel, onBack }: { data: AimData; aimI
   const [animKey, setAnimKey] = useState(0);
   const [session, setSession] = useState({ done: 0, clean: 0, streak: 0 });
   const mistakes = useRef(0);
+  const [tactic, setTactic] = useState(loadTactic);
 
   const ms = useMemo(() => cur?.row[2].split(" ") ?? [], [cur]);
   // Every position of the puzzle: line[k] = after k moves (line[0] = before the opponent's setup move).
@@ -167,6 +177,8 @@ function Session({ data, aimId, level, setLevel, onBack }: { data: AimData; aimI
     if (!cur) return;
     setSolved(true);
     const clean = mistakes.current === 0;
+    // The tactics rating only counts puzzles seen for the first time (a repeat is partly memory).
+    if (!stats[cur.key]) setTactic(updateTactic(cur.row[3], clean));
     const st = recordResult(stats, cur.key, mistakes.current);
     setStats(st);
     save(STATS_KEY, st);
@@ -320,7 +332,7 @@ function Session({ data, aimId, level, setLevel, onBack }: { data: AimData; aimI
           <div className="card">
             <div className="drill-head">
               <button className="link" onClick={onBack}>← 狙い一覧</button>
-              <span className="muted small">連続ノーミス {session.streak} ・ 今回 {session.clean}/{session.done}</span>
+              <span className="muted small">連続ノーミス {session.streak} ・ 今回 {session.clean}/{session.done} ・ 戦術レート {tactic.n ? tactic.r : "—"}{tactic.n > 0 && tactic.n < TACTIC_PROVISIONAL ? "（暫定）" : ""}</span>
             </div>
             <div className="card-title" style={{ marginTop: 6 }}>狙い</div>
             {hidden ? (

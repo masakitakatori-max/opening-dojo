@@ -19,6 +19,9 @@ export const SOURCE_JA: Record<Source, string> = { chesscom: "chess.com", liches
 export interface StoredGame extends GameStats {
   id: string;
   t: number;
+  r?: number; // my rating at the time (games fetched before ratings were kept don't have it)
+  or?: number; // the opponent's rating
+  sp?: string; // time class
 }
 export interface Snap {
   t: number;
@@ -129,7 +132,7 @@ export async function syncGames(o: SyncOptions): Promise<{ store: Store; added: 
     }
     if (!have.has(g.id)) {
       const st = analyzeGame(g);
-      if (st) fresh.push({ ...st, id: g.id, t: g.t });
+      if (st) fresh.push({ ...st, id: g.id, t: g.t, r: g.myRating, or: g.oppRating, sp: g.speed });
     }
     if (i % 5 === 4) {
       o.onStatus?.(`指し手を分析中… ${i + 1}/${games.length} 局`);

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { GM_STYLES, SPLIT_HALF } from "../data/gmStyles";
 import { GHOST_PLAYERS, jaName } from "../lib/ghosts";
 import type { Speed } from "../lib/importGames";
+import { loadTactic, MIN_GAMES, ratingRows, SOLID_GAMES, speedJa, TACTIC_PROVISIONAL } from "../lib/rating";
 import { loadStore, RECENT, saveStore, SOURCE_JA, syncGames, WINDOW, windowOf, type Source, type Store } from "../lib/myGames";
 import { aggregate, AXES, AXIS_GROUPS, axisScores, baseline, METRICS, nearestGms, STYLE_KEYS, zOf, type AxisId, type MetricKey, type Profile, type Split } from "../lib/style";
 
@@ -238,6 +239,8 @@ function Report({ store, onClone }: { store: Store; onClone?: (side: "w" | "b") 
     const xs = Object.values(GM_STYLES).map((g) => g[k]).sort((a, b) => a - b);
     return `${fmt(k, xs[1])}〜${fmt(k, xs[xs.length - 2])}`;
   };
+  const ratings = useMemo(() => ratingRows(store.games), [store]);
+  const tactic = useMemo(loadTactic, []);
   const row = (a: (typeof AXES)[number]) => (
     <AxisRow key={a.id} a={a} v={ax[a.id]} gm={topAx[a.id]} prev={before?.axes[a.id]} recent={recent?.[a.id]} gmName={jaName(top.id)} />
   );
@@ -261,6 +264,52 @@ function Report({ store, onClone }: { store: Store; onClone?: (side: "w" | "b") 
             <button className="chip on" onClick={() => onClone("b")}>黒を持つ</button>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">推定レート <span className="muted">— 対局の結果と相手のレートから。持ち時間の種類ごと</span></div>
+        {ratings.length === 0 ? (
+          <div className="muted small">
+            {store.games.some((g) => g.or) ? "" : "この対局データにはレートの記録がありません。"}
+            {store.source === "pgn" ? "棋譜に WhiteElo / BlackElo が書かれていれば推定できます。" : "「リセット」して取り込み直すと、相手のレートも一緒に取り込みます。"}
+          </div>
+        ) : (
+          <table className="style-table rating-table">
+            <thead><tr><th>種類</th><th>現在</th><th>直近の実力（パフォーマンス）</th><th>相手の平均</th><th>得点率</th><th>傾向</th></tr></thead>
+            <tbody>
+              {ratings.map((r) => (
+                <tr key={r.speed}>
+                  <td>{speedJa(r.speed)}<span className="muted small"> {r.n} 局</span></td>
+                  <td><b>{r.current ?? "—"}</b></td>
+                  <td>
+                    {r.perf === undefined ? (
+                      <span className="muted small">— {MIN_GAMES} 局以上で出ます</span>
+                    ) : (
+                      <>
+                        <b className="rating-perf">{r.perf}</b>
+                        <span className="muted small"> 直近 {r.window} 局{r.window < SOLID_GAMES ? "（参考）" : ""}</span>
+                        {r.current !== undefined && Math.abs(r.perf - r.current) >= 40 && <span className={`small ${r.perf > r.current ? "tone-pos" : "tone-neg"}`}> {r.perf > r.current ? "▲" : "▼"}{Math.abs(r.perf - r.current)}</span>}
+                      </>
+                    )}
+                  </td>
+                  <td>{r.avgOpp}</td>
+                  <td>{pct(r.score)}</td>
+                  <td>{r.trend === undefined ? <span className="muted small">—</span> : <span className={r.trend >= 30 ? "tone-pos" : r.trend <= -30 ? "tone-neg" : "muted"}>{r.trend > 0 ? "+" : ""}{r.trend}</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="rating-tactic">
+          戦術の推定レート <b>{tactic.n ? tactic.r : "—"}</b>
+          <span className="muted small">
+            {tactic.n === 0 ? "　狙いドリルで初めての問題を解くと出ます" : `　狙いドリルの初見 ${tactic.n} 問から${tactic.n < TACTIC_PROVISIONAL ? "（暫定）" : ""}`}
+          </span>
+        </div>
+        <div className="muted small" style={{ marginTop: 8 }}>
+          「直近の実力」は、相手の平均レートと得点率から逆算した値です（直近 50 局まで）。現在のレートより高ければ、いまの成績はレート以上です。
+          「傾向」は、その直近の対局を前半と後半に分けた差です。レートはサイトと持ち時間ごとに基準が違うので、chess.com と Lichess、ブリッツとラピッドの数字は直接比べられません。
+        </div>
       </div>
 
       <div className="style-cols">

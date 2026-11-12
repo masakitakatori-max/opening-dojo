@@ -5,6 +5,8 @@ export interface Imported extends GameInput {
   id: string; // stable per game, so the same game is never counted twice
   t: number; // when it was played (ms)
   speed?: string;
+  myRating?: number; // the player's rating at the time, as recorded by the site
+  oppRating?: number;
 }
 
 /** Short stable hash for games that come without an id (pasted PGN). */
@@ -52,7 +54,8 @@ export async function fromLichess(user: string, max: number, speed: Speed, since
     if (!color) continue;
     const result = g.winner === "white" ? "1-0" : g.winner === "black" ? "0-1" : "1/2-1/2";
     const lost = (result === "1-0") !== (color === "w") && result !== "1/2-1/2";
-    out.push({ id: `li:${g.id}`, t: g.createdAt ?? Date.now(), moves: g.moves.split(" "), color, result, timeLoss: lost && g.status === "outoftime", speed: g.speed });
+    const [me, opp] = color === "w" ? [g.players?.white, g.players?.black] : [g.players?.black, g.players?.white];
+    out.push({ id: `li:${g.id}`, t: g.createdAt ?? Date.now(), moves: g.moves.split(" "), color, result, timeLoss: lost && g.status === "outoftime", speed: g.speed, myRating: me?.rating, oppRating: opp?.rating });
   }
   return out;
 }
@@ -88,7 +91,8 @@ export async function fromChessCom(user: string, max: number, speed: Speed, onPr
       const result = g.white?.result === "win" ? "1-0" : g.black?.result === "win" ? "0-1" : "1/2-1/2";
       const mine = color === "w" ? g.white : g.black;
       const body = String(g.pgn).split(/\n\s*\n/).slice(1).join(" ");
-      out.push({ id, t: (g.end_time ?? 0) * 1000 || Date.now(), moves: sanTokens(body), color, result, timeLoss: mine?.result === "timeout", speed: g.time_class });
+      const theirs = color === "w" ? g.black : g.white;
+      out.push({ id, t: (g.end_time ?? 0) * 1000 || Date.now(), moves: sanTokens(body), color, result, timeLoss: mine?.result === "timeout", speed: g.time_class, myRating: mine?.rating, oppRating: theirs?.rating });
       if (out.length >= max) break;
     }
     onProgress?.(out.length);
@@ -120,7 +124,11 @@ export function fromPgn(text: string, me?: string): { games: Imported[]; name: s
     const lost = (result === "1-0") !== (color === "w") && result !== "1/2-1/2";
     const moves = sanTokens(body);
     const date = Date.parse((tag(g, "UTCDate") || tag(g, "Date")).replace(/\./g, "-"));
-    games.push({ id: `pgn:${hashOf(moves.join(" "))}`, t: Number.isFinite(date) ? date : Date.now(), moves, color, result, timeLoss: lost && /time/i.test(tag(g, "Termination")) });
+    const elo = (t: string) => +tag(g, t) || undefined;
+    games.push({
+      id: `pgn:${hashOf(moves.join(" "))}`, t: Number.isFinite(date) ? date : Date.now(), moves, color, result, timeLoss: lost && /time/i.test(tag(g, "Termination")),
+      myRating: elo(color === "w" ? "WhiteElo" : "BlackElo"), oppRating: elo(color === "w" ? "BlackElo" : "WhiteElo"), speed: elo("WhiteElo") && elo("BlackElo") ? "棋譜" : undefined,
+    });
   }
   return { games, name };
 }

@@ -139,6 +139,8 @@ export default function Board(p: Props) {
       setSelected(null);
       return;
     }
+    // Tapping the piece that is already selected lets go of it (decided on release, so it can still be dragged).
+    const wasSelected = selected === sq;
     setSelected(sq);
     draggedRef.current = false;
     const from = sq;
@@ -153,6 +155,7 @@ export default function Board(p: Props) {
       setDrag(null);
       const to = live.current.squareFromPoint(ev.clientX, ev.clientY);
       if (to && to !== from) live.current.tryMove(from, to);
+      else if (wasSelected && to === from && !draggedRef.current) setSelected(null); // a tap, not a drag put back
     };
     const off = () => {
       window.removeEventListener("pointermove", move);
