@@ -1,0 +1,12 @@
+{
+  "name": "Opening Dojo",
+  "short_name": "Dojo",
+  "description": "型 × 線 で覚えるオープニング道場",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#262522",
+  "theme_color": "#262522",
+  "lang": "ja",
+  "icons": [{ "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }]
+}

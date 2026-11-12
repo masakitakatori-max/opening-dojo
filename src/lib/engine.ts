@@ -19,7 +19,7 @@ const reqKey = (r: Request) => `${r.fen}|${(r.searchmoves ?? []).join(",")}`;
 
 type Listener = (key: string, lines: EngineLine[], done: boolean) => void;
 
-class Engine {
+export class Engine {
   private worker?: Worker;
   private ready = false;
   private searching = false;

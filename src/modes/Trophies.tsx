@@ -12,6 +12,8 @@ import { gradedMarks, gradePiece } from "../lib/review";
 import { SpeedSlider, useReplaySpeed } from "../lib/replaySpeed";
 import { sfx } from "../lib/sound";
 import { load, save } from "../lib/storage";
+import { notesFor, type OpeningNotes } from "../data/openingNotes";
+import { OpeningNotesView } from "../components/OpeningNotesView";
 import { candidates, namedNodes, nearestWith, openingChain, pathTo } from "../lib/tree";
 import { detect, loadLog, NOT_COVERED, openingAward, openingPoints, TROPHIES, type MoveCtx, type TrophyCat } from "../lib/trophies";
 
@@ -37,6 +39,7 @@ interface OpeningDetail {
   gm?: string[];
   chain: string[];
   branches: { san: string; share: number; name?: string }[];
+  notes?: { name: string; notes: OpeningNotes };
 }
 interface Demo extends TrophyDemo {
   id: string;
@@ -112,6 +115,11 @@ export default function Trophies({ onOpen }: { onOpen: (moves: string[]) => void
         plans: plans?.info?.plans ? { name: plans.info.name ?? o.name, items: plans.info.plans } : undefined,
         gm: nearestWith(o.node, "gm")?.info?.gm,
         chain: o.chain.map((x) => x.info!.name!),
+        notes: (() => {
+          const hit = notesFor(o.chain.map((x) => pathTo(x).join(" ")));
+          const at = hit && o.chain.find((x) => pathTo(x).join(" ") === hit.line);
+          return hit ? { name: at?.info?.name ?? o.name, notes: hit.notes } : undefined;
+        })(),
         branches: candidates(o.node.fen).map((x) => ({ san: x.san, share: x.share, name: x.childNode.info?.name })),
       },
       earns: (f, mv) => {
@@ -508,6 +516,7 @@ function DemoModal({ demo, onClose, onOpen }: { demo: Demo; onClose: () => void;
                 <ul>{demo.opening.plans.items.map((x) => <li key={x}>{x}</li>)}</ul>
               </div>
             )}
+            {demo.opening.notes && <OpeningNotesView name={demo.opening.notes.name} notes={demo.opening.notes.notes} own={demo.opening.notes.name === demo.title} />}
             {demo.opening.branches.length > 0 && (
               <div className="note">
                 <span className="note-label">ここからの分岐（指される割合）</span>

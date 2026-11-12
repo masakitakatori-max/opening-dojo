@@ -1,7 +1,7 @@
 // 局面練習: set up any position, then play it out against the engine — again and again.
 import { Chess, type Color } from "chess.js";
 import { BASE } from "../lib/asset";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Board, { type Arrow, type BadgeKind } from "../components/Board";
 import { Reasons, VerdictCard } from "../components/panels";
 import { explainMove } from "../lib/explain";
@@ -28,6 +28,23 @@ const STRENGTHS = [
 ] as const;
 const CLONE = 3;
 const SELF = 4;
+
+/** Time controls: minutes + increment seconds. null = no clock. */
+type TC = { m: number; inc: number } | null;
+const TCS: { tc: TC; ja: string }[] = [
+  { tc: null, ja: "なし" },
+  { tc: { m: 3, inc: 2 }, ja: "3+2" },
+  { tc: { m: 5, inc: 3 }, ja: "5+3" },
+  { tc: { m: 10, inc: 5 }, ja: "10+5" },
+  { tc: { m: 15, inc: 10 }, ja: "15+10" },
+];
+const fmtClock = (ms: number) => {
+  const s = Math.max(0, ms) / 1000;
+  if (s < 10) return `0:0${s.toFixed(1)}`;
+  const m = Math.floor(s / 60);
+  const r = Math.floor(s % 60);
+  return `${m}:${String(r).padStart(2, "0")}`;
+};
 
 /** Which helpers are shown while playing. Analysis keeps running quietly either way, for the review. */
 interface Assist {
@@ -385,7 +402,44 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
   const fen = moves.length ? moves[moves.length - 1].fen : pos.fen;
   const chess = useMemo(() => new Chess(fen), [fen]);
   const turn = chess.turn();
-  const over = chess.isGameOver();
+
+  // Game clock: starts with the first move; the side that just moved gets the increment.
+  const [tc, setTcState] = useState<TC>(() => load<TC>("dojo.spar.clock", null));
+  const [clock, setClock] = useState<{ w: number; b: number }>(() => ({ w: (tc?.m ?? 0) * 60e3, b: (tc?.m ?? 0) * 60e3 }));
+  const [flag, setFlag] = useState<Color>();
+  const tick = useRef(0);
+  const flagRef = useRef<Color>();
+  flagRef.current = flag;
+  const setTc = (t: TC) => {
+    setTcState(t);
+    save("dojo.spar.clock", t);
+    setClock({ w: (t?.m ?? 0) * 60e3, b: (t?.m ?? 0) * 60e3 });
+    setFlag(undefined);
+  };
+  const over = chess.isGameOver() || !!flag;
+  const clockOn = !!tc && moves.length > 0 && !over;
+  useEffect(() => {
+    if (!tc || !moves.length) return;
+    const mover = moves[moves.length - 1].before.split(" ")[1] as Color;
+    setClock((c) => ({ ...c, [mover]: c[mover] + tc.inc * 1000 }));
+    tick.current = Date.now();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moves.length]);
+  useEffect(() => {
+    if (!clockOn) return;
+    tick.current = Date.now();
+    const id = setInterval(() => {
+      const t = Date.now();
+      const dt = t - tick.current;
+      tick.current = t;
+      setClock((c) => {
+        const left = c[turn] - dt;
+        if (left <= 0) setFlag(turn);
+        return { ...c, [turn]: Math.max(0, left) };
+      });
+    }, 100);
+    return () => clearInterval(id);
+  }, [clockOn, turn]);
 
   // Every new position is analysed once: it grades the move just played, and gives the opponent's reply.
   useEffect(() => {
@@ -401,7 +455,7 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
       const pick = clone ? cloneMove(fen, lines, clone.p, clone.book, +fen.split(" ")[5] || 1) ?? undefined : undefined;
       const uci = pick?.uci ?? chooseReply(lines, turn, Math.min(level, 1)).pv[0];
       setTimeout(() => {
-        if (!live) return;
+        if (!live || flagRef.current) return;
         const c = new Chess(fen);
         const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] });
         setMoves((ms) => [...ms, { san: m.san, from: m.from, to: m.to, before: fen, fen: c.fen(), by: "opp", pick }]);
@@ -484,7 +538,9 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
   const threatOf = show.threat && last && !over && (last.by === "opp" || self) ? explainMove(last.before, last.from + last.to, engine.evalsOf(last.before)?.get(last.from + last.to)) : undefined;
 
   let result: string | undefined;
-  if (over) {
+  if (flag) {
+    result = self ? `${flag === "w" ? "黒" : "白"}の勝ち（時間切れ）` : flag === me ? "負け（時間切れ）" : "勝ち（相手の時間切れ）";
+  } else if (over) {
     if (chess.isCheckmate()) result = self ? `${turn === "w" ? "黒" : "白"}の勝ち（チェックメイト）` : turn === me ? "負け（チェックメイトされました）" : "勝ち（チェックメイト！）";
     else result = "引き分け";
   }
@@ -507,6 +563,7 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
     <div className="play-layout">
       <div className="board-col">
         <div className="board-stack">
+          {tc && <ClockBar ms={clock[orientation === "w" ? "b" : "w"]} on={clockOn && turn !== orientation} label={self ? (orientation === "w" ? "黒" : "白") : "相手"} />}
           <Board
             fen={fen}
             orientation={orientation}
@@ -520,6 +577,7 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
             animKey={animKey}
             glow={false}
           />
+          {tc && <ClockBar ms={clock[orientation]} on={clockOn && turn === orientation} label={self ? (orientation === "w" ? "白" : "黒") : "あなた"} />}
           <div className="legend">
             <span className="muted small">
               {self
@@ -549,6 +607,12 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
             <div className="spar-row" style={{ marginTop: 10 }}><span className="spar-label">相手</span>
               {STRENGTHS.map((s) => <button key={s.id} className={`chip ${level === s.id ? "on" : ""}`} disabled={s.id === CLONE && !loadStore()} onClick={() => setLevel(s.id)} title={s.hint}>{s.ja}</button>)}
               {!pos.saved && <button className="chip" style={{ marginLeft: "auto" }} onClick={() => onUpdate({ ...pos, level, saved: true })}>この局面を保存</button>}
+            </div>
+            <div className="spar-row"><span className="spar-label">時計</span>
+              {TCS.map((x) => (
+                <button key={x.ja} className={`chip ${(tc?.m ?? 0) === (x.tc?.m ?? 0) ? "on" : ""}`} disabled={moves.length > 0 && !over} onClick={() => setTc(x.tc)} title={x.tc ? `持ち時間 ${x.tc.m} 分、1 手ごとに ${x.tc.inc} 秒加算` : "時計を使わない"}>{x.ja}</button>
+              ))}
+              {tc && <span className="muted small">最初の一手から動きます{moves.length > 0 && !over ? "（対局中は変更できません）" : ""}</span>}
             </div>
           </div>
 
@@ -684,3 +748,12 @@ function Session({ pos, onBack, onUpdate }: { pos: SparPos; onBack: () => void; 
   );
 }
 
+
+function ClockBar({ ms, on, label }: { ms: number; on: boolean; label: string }) {
+  return (
+    <div className={`clock-bar ${on ? "on" : ""} ${ms < 20e3 ? "low" : ""}`}>
+      <span className="clock-label">{label}</span>
+      <span className="clock-time">{fmtClock(ms)}</span>
+    </div>
+  );
+}

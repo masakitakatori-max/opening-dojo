@@ -49,6 +49,8 @@ interface Props {
   rings?: { sq: string; kind: "mine" | "theirs" }[]; // hanging pieces
   ghosts?: Ghost[];
   glow?: boolean; // outline the pieces that have a marked move (off = calmer board)
+  /** Read-out mode: moves are made in this (unseen) position while the board keeps showing `fen`. */
+  inputFen?: string;
 }
 
 const FILES = "abcdefgh";
@@ -77,13 +79,14 @@ function BookIcon() {
 
 export default function Board(p: Props) {
   const chess = useMemo(() => new Chess(p.fen), [p.fen]);
-  const turn = chess.turn();
+  const mover = useMemo(() => (p.inputFen ? new Chess(p.inputFen) : chess), [p.inputFen, chess]);
+  const turn = mover.turn();
   const [selected, setSelected] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ from: string; piece: string; x: number; y: number } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const draggedRef = useRef(false);
 
-  useEffect(() => setSelected(null), [p.fen]);
+  useEffect(() => setSelected(null), [p.fen, p.inputFen]);
   const onSelect = p.onSelect;
   useEffect(() => onSelect?.(selected), [selected, onSelect]);
 
@@ -92,15 +95,15 @@ export default function Board(p: Props) {
   const targets = useMemo(() => {
     if (!selected) return new Map<string, boolean>();
     const m = new Map<string, boolean>();
-    for (const mv of chess.moves({ square: selected as Square, verbose: true })) m.set(mv.to, !!mv.captured);
+    for (const mv of mover.moves({ square: selected as Square, verbose: true })) m.set(mv.to, !!mv.captured);
     return m;
-  }, [selected, chess]);
+  }, [selected, mover]);
 
   const checkSq = useMemo(() => {
     if (!chess.inCheck()) return null;
-    for (const row of chess.board()) for (const c of row) if (c && c.type === "k" && c.color === turn) return c.square;
+    for (const row of chess.board()) for (const c of row) if (c && c.type === "k" && c.color === chess.turn()) return c.square;
     return null;
-  }, [chess, turn]);
+  }, [chess]);
 
   const squareFromPoint = (x: number, y: number) => {
     const el = boardRef.current;
@@ -114,9 +117,9 @@ export default function Board(p: Props) {
 
   // A pawn reaching the last rank: ask which piece it becomes (queen first).
   const [promo, setPromo] = useState<{ from: string; to: string; color: string } | null>(null);
-  useEffect(() => setPromo(null), [p.fen]);
+  useEffect(() => setPromo(null), [p.fen, p.inputFen]);
   const tryMove = (from: string, to: string) => {
-    const mv = chess.moves({ square: from as Square, verbose: true }).find((m) => m.to === to);
+    const mv = mover.moves({ square: from as Square, verbose: true }).find((m) => m.to === to);
     if (!mv) return false;
     if (mv.promotion) setPromo({ from, to, color: mv.color });
     else p.onMove(from, to, undefined);
@@ -134,7 +137,7 @@ export default function Board(p: Props) {
     if (e.button !== 0) return;
     detach.current?.();
     setDrag(null);
-    const piece = chess.get(sq as Square);
+    const piece = mover.get(sq as Square);
     if (selected && targets.has(sq)) {
       tryMove(selected, sq);
       return;

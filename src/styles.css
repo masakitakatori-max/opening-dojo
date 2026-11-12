@@ -293,9 +293,10 @@ button:disabled { opacity: .45; cursor: default; }
 .fb-done .fb-title { color: #f6d488; font-size: 20px; }
 @keyframes shake { 0%,100% { transform: none; } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 .fb-opp { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--text-2); }
-.fb-actions { display: flex; gap: 8px; margin-top: 12px; }
+.fb-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.fb-actions button { white-space: nowrap; }
 .fb-actions button { padding: 9px 14px; border-radius: 6px; background: #3a3733; font-weight: 800; }
-.fb-actions button.primary { flex: 1; background: var(--green); }
+.fb-actions button.primary { flex: 1 1 auto; background: var(--green); }
 .fb-actions button.primary:hover { background: #95c862; }
 .seq { display: flex; flex-wrap: wrap; gap: 4px; }
 .seq-m { font-weight: 800; font-size: 13px; padding: 3px 7px; border-radius: 4px; background: #2b2926; color: var(--muted); display: inline-flex; gap: 3px; }
@@ -696,3 +697,61 @@ button.op-chip:hover { color: #fff; }
 .replay-module { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; }
 .replay-module select { flex: 1; min-width: 0; background: #171613; border: 1px solid var(--line); color: #fff; padding: 7px 8px; border-radius: 6px; font: inherit; }
 .replay-module-note { padding: 0 12px 10px; line-height: 1.6; }
+
+/* ── 狙いドリル：攻める／守る ── */
+.view-tabs { display: flex; gap: 8px; margin: 10px 0 12px; flex-wrap: wrap; }
+.view-tab { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 16px; border-radius: 8px; background: var(--card); color: var(--text-2); font-weight: 800; font-size: 15px; border: 2px solid transparent; }
+.view-tab span { font-size: 11px; font-weight: 600; color: var(--muted); }
+.view-tab.on { border-color: var(--green); color: #fff; background: var(--card-2); }
+
+/* ── 振り返り ── */
+.review-busy { display: flex; align-items: center; gap: 10px; margin-top: 12px; border-left: 3px solid rgb(var(--heat-engine)); }
+.review-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin: 14px 0 10px; }
+.kind-list { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.kind-head { display: flex; justify-content: space-between; align-items: baseline; }
+.kind-row .bar { margin: 4px 0; }
+.kind-go { margin-top: 6px; }
+.phase-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.phase-chip { background: #3a3733; border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--text-2); }
+.review-games { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.review-game { display: grid; grid-template-columns: 14px 48px 64px 1fr auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--card-2); text-align: left; color: var(--text); }
+.review-game:hover { background: #34312d; }
+.rg-side { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #666; }
+.rg-side.w { background: #f0f0f0; }
+.rg-side.b { background: #111; }
+.rg-res { font-weight: 800; font-size: 13px; }
+.rg-res.win { color: var(--green); }
+.rg-res.loss { color: #e0605d; }
+.rg-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rg-v { display: flex; gap: 6px; font-size: 12px; }
+.seq-m.clickable { cursor: pointer; }
+.seq-m.cur { outline: 2px solid rgb(var(--heat-main)); color: #fff; }
+.seq-m .muted { font-weight: 600; margin-right: 1px; }
+
+/* ── 今日の練習 ── */
+.today-stats { display: flex; align-items: flex-end; gap: 18px; margin-top: 12px; flex-wrap: wrap; }
+.today-stat { display: flex; align-items: baseline; gap: 4px; font-size: 13px; color: var(--text-2); }
+.today-stat b { font-size: 26px; color: #fff; }
+.today-stat small { color: var(--muted); margin-left: 2px; }
+.today-week { display: flex; align-items: flex-end; gap: 3px; height: 32px; }
+.today-week i { display: block; width: 8px; border-radius: 2px; background: var(--green); }
+.today-menu { display: flex; flex-direction: column; gap: 8px; }
+.today-item { flex-direction: row; align-items: center; gap: 14px; }
+.today-icon { font-size: 26px; width: 36px; text-align: center; flex: 0 0 auto; }
+.today-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.today-n { background: var(--green); color: #fff; font-weight: 800; border-radius: 999px; min-width: 30px; padding: 3px 9px; text-align: center; }
+
+/* ── 対局時計 ── */
+.clock-bar { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; margin: 6px 0; border-radius: 6px; background: var(--card); color: var(--muted); font-variant-numeric: tabular-nums; }
+.clock-bar.on { background: #f0f0f0; color: #111; }
+.clock-bar.on.low { background: #e0605d; color: #fff; }
+.clock-bar.low:not(.on) { color: #e0605d; }
+.clock-label { font-size: 12px; font-weight: 700; }
+.clock-time { font-size: 22px; font-weight: 800; }
+
+@media (max-width: 760px) {
+  .review-game { grid-template-columns: 12px 40px 44px 1fr; }
+  .rg-v { grid-column: 2 / -1; }
+  .view-tab { flex: 1; }
+}
+.card.demo-notes { margin-top: 0; border-top: 0; padding-top: 12px; }

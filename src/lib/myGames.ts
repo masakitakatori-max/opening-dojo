@@ -2,6 +2,7 @@
 // diagnosis) and an opening book of the moves they actually played (for the clone opponent).
 import { Chess } from "chess.js";
 import { GM_STYLES } from "../data/gmStyles";
+import { keepGames } from "./gameReview";
 import { fromChessCom, fromLichess, fromPgn, type Imported, type Speed } from "./importGames";
 import { posHash } from "./poshash";
 import { load, save } from "./storage";
@@ -120,6 +121,7 @@ export async function syncGames(o: SyncOptions): Promise<{ store: Store; added: 
   if (!games.length && !prev) {
     throw new Error(o.src === "pgn" ? "読める対局がありませんでした。棋譜（PGN）と、棋譜に書かれた自分の名前を確認してください。" : "条件に合う対局がありませんでした。持ち時間の条件を「すべて」にして試してください。");
   }
+  keepGames(games); // move lists for 振り返り (replay + puzzles from your own mistakes)
   const have = new Set(prev?.games.map((g) => g.id));
   const bookIds = new Set(prev?.bookIds ?? []);
   const book: Book = prev?.book ? structuredClone(prev.book) : {};

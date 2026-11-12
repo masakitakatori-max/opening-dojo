@@ -7,15 +7,20 @@ import { COURSES, courseLines, type Course, type DrillLine } from "../data/cours
 import { sfx } from "../lib/sound";
 import { useScrollTop } from "../lib/useScrollTop";
 import { load, mastered, pickLine, recordResult, save, statsKey, type CourseStats } from "../lib/storage";
-import { candidates, getNode, nearestWith, openingChain, openingOf } from "../lib/tree";
+import { candidates, getNode, nearestWith, openingChain, openingOf, pathTo } from "../lib/tree";
+import { notesFor } from "../data/openingNotes";
+import { OpeningNotesView } from "../components/OpeningNotesView";
 
 type Hint = "always" | "after" | "never";
 type Feedback = { kind: "good" | "best" | "soft" | "bad" | "info" | "done"; title: string; body?: string };
 
-export default function Drill({ onExplore }: { onExplore: (moves: string[]) => void }) {
-  const [course, setCourse] = useState<Course | null>(null);
+export default function Drill({ onExplore, onAim, initialCourse }: { onExplore: (moves: string[]) => void; onAim?: (courseId: string) => void; initialCourse?: string }) {
+  const [course, setCourse] = useState<Course | null>(() => COURSES.find((c) => c.id === initialCourse) ?? null);
+  useEffect(() => {
+    if (course) save("dojo.last.drill", { id: course.id, t: Date.now() });
+  }, [course]);
   if (!course) return <CoursePicker onPick={setCourse} />;
-  return <Session key={course.id} course={course} onBack={() => setCourse(null)} onExplore={onExplore} />;
+  return <Session key={course.id} course={course} onBack={() => setCourse(null)} onExplore={onExplore} onAim={onAim} />;
 }
 
 function CoursePicker({ onPick }: { onPick: (c: Course) => void }) {
@@ -62,7 +67,7 @@ function CoursePicker({ onPick }: { onPick: (c: Course) => void }) {
   );
 }
 
-function Session({ course, onBack, onExplore }: { course: Course; onBack: () => void; onExplore: (moves: string[]) => void }) {
+function Session({ course, onBack, onExplore, onAim }: { course: Course; onBack: () => void; onExplore: (moves: string[]) => void; onAim?: (courseId: string) => void }) {
   useScrollTop();
   const lines = useMemo(() => courseLines(course), [course]);
   const [stats, setStats] = useState<CourseStats>(() => load(statsKey(course.id), {}));
@@ -253,6 +258,11 @@ function Session({ course, onBack, onExplore }: { course: Course; onBack: () => 
             <h2 className="op-name">{course.title}</h2>
             <div className="op-en">{course.sub}</div>
             {course.gm && <GmChips names={[course.gm]} />}
+            {onAim && (
+              <button className="chip on" style={{ marginTop: 8 }} onClick={() => onAim(course.id)} title="この定跡から実戦で生まれた戦術問題（Lichess）を狙いドリルで解く">
+                ⚔️ この型から生まれた戦術を解く
+              </button>
+            )}
             <div className="crumbs">
               {op && openingChain(op).map((n, i, a) => (
                 <span key={n.key} className={i === a.length - 1 ? "crumb cur" : "crumb"}>{n.info!.name}{i < a.length - 1 ? " ›" : ""}</span>
@@ -297,8 +307,33 @@ function Session({ course, onBack, onExplore }: { course: Course; onBack: () => 
               <ul className="plan-list">{planNode.info.plans.map((p) => <li key={p}>{p}</li>)}</ul>
             </div>
           )}
+          <DrillNotes op={op} root={course.root} />
         </div>
       </aside>
+    </div>
+  );
+}
+
+/** 型ドリル: the long commentary of the family you are in (folded by default, so it never hides the drill). */
+function DrillNotes({ op, root }: { op: ReturnType<typeof openingOf>; root: string }) {
+  const [open, setOpen] = useState<boolean>(() => load("dojo.drill.notes", false));
+  // Before the moves reach the course's opening, explain the opening the course is about.
+  const rootPath = root ? replay(root.split(" ")) : [];
+  const rootOp = rootPath.length ? openingOf(rootPath[rootPath.length - 1].fen) : undefined;
+  let chain = op ? openingChain(op) : [];
+  let hit = notesFor(chain.map((n) => pathTo(n).join(" ")));
+  if (!hit && rootOp) {
+    chain = openingChain(rootOp);
+    hit = notesFor(chain.map((n) => pathTo(n).join(" ")));
+  }
+  if (!hit) return null;
+  const at = chain.find((n) => pathTo(n).join(" ") === hit.line);
+  return (
+    <div className="card demo-notes">
+      <button className="link" onClick={() => { save("dojo.drill.notes", !open); setOpen(!open); }}>
+        {open ? "▼" : "▶"} 「{at?.info?.name}」の詳しい解説
+      </button>
+      {open && <OpeningNotesView name={at?.info?.name ?? ""} notes={hit.notes} own />}
     </div>
   );
 }
